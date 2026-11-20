@@ -142,13 +142,21 @@ html,body,.uks{background:#060607}
 .uks-cart{color:#fff;transition:color .4s}
 .uks.px-on .uks-top img{filter:none}.uks.px-on .uks-top span{color:#77766f}.uks.px-on .uks-cart{color:#111}
 .uks-hint{color:#c9cbd0}
+.uks-load{position:absolute;inset:0;z-index:30;background:#060607;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .7s,visibility 0s .7s}
+.uks-load.done{opacity:0;visibility:hidden}
+.uks-load img{width:170px;filter:invert(1)}
+.uks-load i{width:150px;height:2px;background:#2a2a2c;overflow:hidden}
+.uks-load b{display:block;height:100%;width:4%;background:#fff;transition:width .3s}
 .uks-lbl{position:absolute;left:0;top:0;z-index:4;font-size:13px;color:#77766f;white-space:nowrap;pointer-events:none;opacity:0;will-change:transform}
 .uks.px-on .uks-lbl{display:none}
 </style>
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 </head>
 <body>
 <main class="uks" id="uks" aria-label="Boutique virtuelle ÜNKUT">
+  <div class="uks-load" id="load"><img src="store-assets/logo.png" alt="ÜNKUT"><i><b></b></i></div>
   <div class="uks-lbl" id="lbl"></div>
   <div class="uks-top"><img src="store-assets/logo.png" alt="ÜNKUT"><span>VIRTUAL STORE</span></div>
   <a class="uks-cart" id="cart" href="https://unkutofficial.com/cart" target="_blank" rel="noopener" aria-label="Panier">
@@ -179,6 +187,6 @@ html,body,.uks{background:#060607}
 </main>
 <script src="store-data.js"></script>
 <script src="store-seq.js"></script>
-<script type="module" src="store3d.js"></script>
+<script type="module" src="store3d.js?v=6"></script>
 </body>
 </html>
