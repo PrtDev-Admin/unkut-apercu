@@ -82,7 +82,7 @@ const gridTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#0d0d0f'; g.fi
 const lin = v => Math.pow(v / 255, 2.2);
 const ALB = {                      /* [texture, teinte] : la teinte ramène la matière à l'albédo utilisé dans Blender */
   wall: [TX.beton, .16 / lin(160)], pillar: [TX.beton, .32 / lin(160)], panel: [TX.enduit, .82 / lin(232)],
-  grid: [gridTex, 1], floor: [TX.sol, .2 / lin(128)], slab: [TX.beton, .045 / lin(160)]      /* plafond : béton sombre, sans grille */
+  grid: [TX.beton, .03 / lin(160)], floor: [TX.sol, .2 / lin(128)], slab: [TX.beton, .045 / lin(160)]      /* plafond : béton sombre, sans grille */
 };
 const EXPO = 1.25;                 /* exposition générale de la lumière calculée */
 const lmTex = n => { const t = tex('store-assets/lm_' + n + (LOW ? '_1k' : '') + '.webp', null, false, true); t.channel = 2; return t; };
@@ -92,7 +92,7 @@ new GLTFLoader(mgr).load('store-assets/boutique.glb', gl => {
   gl.scene.traverse(o => {
     if (!o.isMesh) return;
     const grp = o.parent && LMAP[o.parent.name] ? o.parent.name : 'shell', n = o.material.name;
-    if (n === 'neon') o.material = new THREE.MeshBasicMaterial({ color: 0xf6f8ff });
+    if (n === 'neon') o.visible = false;                         /* tubes refaits plus bas, avec leur verre et leurs culots */
     else if (n === 'lightpanel') o.material = new THREE.MeshBasicMaterial({ color: 0xf2f3f5, side: THREE.DoubleSide });
     else {
       o.material = new THREE.MeshBasicMaterial({ map: ALB[n][0], color: new THREE.Color().setScalar(ALB[n][1]), lightMap: LMAP[grp], lightMapIntensity: 2 * Math.PI * EXPO });
@@ -161,18 +161,48 @@ function labelTex(text){
 const haloTex = canvasTex(64, 256, (g, w, h) => { const gr = g.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(.5, 'rgba(235,240,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = gr; g.fillRect(0, 0, w, h); const m = g.createLinearGradient(0, 0, 0, h); m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(.12, 'rgba(0,0,0,0)'); m.addColorStop(.88, 'rgba(0,0,0,0)'); m.addColorStop(1, 'rgba(0,0,0,1)');
   g.globalCompositeOperation = 'destination-out'; g.fillStyle = m; g.fillRect(0, 0, w, h); });
-const mHalo = new THREE.MeshBasicMaterial({ map: haloTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: .8 });
+const mHalo = new THREE.MeshBasicMaterial({ map: haloTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: .55 });
+
+const mGalva = new THREE.MeshStandardMaterial({ color: 0x8f9296, roughness: .62, metalness: .7, envMapIntensity: 1 });
+const mHolder = new THREE.MeshStandardMaterial({ color: 0xe4e4e2, roughness: .5 });
+const mTube = new THREE.MeshBasicMaterial({ map: canvasTex(8, 256, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h);
+  [[0, '#6f6a62'], [.025, '#b9b4aa'], [.07, '#f1f2f4'], [.5, '#f8faff'], [.93, '#f1f2f4'], [.975, '#b9b4aa'], [1, '#6f6a62']].forEach(([p, c]) => gr.addColorStop(p, c)); g.fillStyle = gr; g.fillRect(0, 0, w, h); }) });
+
+/* panneaux grillagés derrière les néons : vrai treillis soudé en fils d'acier, posé devant un fond de béton sombre.
+   Chaque fil est découpé en tronçons dont la teinte dépend de la distance au tube : c'est le néon qui les éclaire */
+function wireMesh(){
+  const pitch = LOW ? .08 : .05, th = .0038, zw = -R + .176, list = [], col = new THREE.Color();
+  const glow = (dx, y) => { let best = 9; for (const c of [1.25, 2.95]){ const dy = Math.max(0, Math.abs(y - c) - .6); best = Math.min(best, Math.hypot(dx, dy)); } return .1 + .95 / (1 + Math.pow(best / .13, 2)); };
+  ANG.forEach((a, k) => [-1, 1].forEach(sd => {
+    const cx = sd * 1.895, tx = sd * 1.98;
+    for (let x = -.345; x <= .3451; x += pitch) for (let y = 0; y < HH; y += .22) list.push([k, cx + x, y + .11, th, .22, glow(cx + x - tx, y + .11)]);      /* fils verticaux */
+    for (let y = pitch / 2; y < HH; y += pitch) for (let x = -.345; x < .344; x += .115) list.push([k, cx + x + .0575, y, .115, th, glow(cx + x + .0575 - tx, y)]);   /* fils horizontaux */
+  }));
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial(), list.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
+  list.forEach(([k, x, y, w, h, v], i) => {
+    const a = -ANG[k] * RAD; p.set(x, y, zw).applyAxisAngle(Y, a); q.setFromAxisAngle(Y, a); sc.set(w, h, th); m.compose(p, q, sc); mesh.setMatrixAt(i, m);
+    const j = v * (.9 + Math.random() * .2); mesh.setColorAt(i, col.setRGB(j * .62, j * .64, j * .68, THREE.SRGBColorSpace));
+  });
+  scene.add(mesh);
+}
+wireMesh();
 
 /* ---------- les stations : même décor central pour chaque catégorie ---------- */
 const logoTex = tex('store-assets/logo.png');
 const stations = ST.map((s, k) => {
   const g = new THREE.Group(); g.rotation.y = -ANG[k] * RAD; scene.add(g);
   const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
-  /* réglettes des néons : boîtier métal, culots, halo sur la grille */
+  /* néons : réglette galvanisée, douilles, culots alu, tube de verre plus sombre vers ses extrémités, halo */
   [-1, 1].forEach(sd => [1.25, 2.95].forEach(y => {
-    add(new THREE.BoxGeometry(.05, 1.33, .025), mMetal, sd * 1.98, y, -R + .165);
-    [-1, 1].forEach(e => add(new THREE.BoxGeometry(.05, .035, .05), mMetal, sd * 1.98, y + e * .64, -R + .195));
-    add(new THREE.PlaneGeometry(.62, 1.75), mHalo, sd * 1.98, y, -R + .182);
+    const x = sd * 1.98;
+    add(new THREE.BoxGeometry(.046, 1.34, .022), mGalva, x, y, -R + .193);
+    add(new THREE.CylinderGeometry(.0145, .0145, 1.2, 18, 1, true), mTube, x, y, -R + .226);
+    [-1, 1].forEach(e => {
+      add(new THREE.CylinderGeometry(.0162, .0162, .026, 18), mSteel, x, y + e * .612, -R + .226);
+      add(new THREE.BoxGeometry(.032, .034, .04), mHolder, x, y + e * .642, -R + .214);
+    });
+    add(new THREE.PlaneGeometry(.4, 1.6), mHalo, x, y, -R + .182);
   }));
   /* logo + nom du rayon sur le panneau */
   add(new THREE.PlaneGeometry(.95, .95 * 279 / 939), new THREE.MeshBasicMaterial({ map: logoTex, transparent: true }), 0, 3.38, FRONT + .005);
@@ -210,6 +240,15 @@ function preloadNext(){                               /* une fois l'écran affic
   const s = stations.find(x => !x.loaded) || stations.find(x => !x.fullLoaded); if (!s) return;
   s.loaded ? s.full() : s.load(); setTimeout(preloadNext, LOW ? 2500 : 1200);
 }
+/* aluminium brossé de la résille : stries fines dans le sens de la lame, taches d'oxydation, brillance inégale */
+const aluMaps = (() => {
+  const mk = draw => { const t = canvasTex(512, 64, draw); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; };
+  const streaks = (g, w, h, base, amp, n) => { g.fillStyle = `rgb(${base},${base},${base})`; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < n; i++){ const v = base + (Math.random() - .5) * amp | 0; g.fillStyle = `rgba(${v},${v},${v},.5)`; g.fillRect(Math.random() * w, Math.random() * h, 30 + Math.random() * 220, 1); }
+    for (let i = 0; i < 26; i++){ const x = Math.random() * w, y = Math.random() * h, r = 6 + Math.random() * 22, gr = g.createRadialGradient(x, y, 0, x, y, r); const d = base - amp * .5 | 0; gr.addColorStop(0, `rgba(${d},${d},${d},.35)`); gr.addColorStop(1, `rgba(${d},${d},${d},0)`); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } };
+  const map = mk((g, w, h) => streaks(g, w, h, 196, 60, 900)), rough = mk((g, w, h) => streaks(g, w, h, 150, 110, 900));
+  rough.colorSpace = THREE.NoColorSpace; return { map, rough };
+})();
 /* plafond : résille métallique à maille fine, posée par travées. Chaque travée est alignée sur son mur et s'arrête
    sur un profilé porteur : la grille suit donc les cinq pans de la salle au lieu de les couper en biais */
 (function(){
@@ -229,7 +268,8 @@ function preloadNext(){                               /* une fois l'écran affic
     for (let z = za + pitch / 2; z < zb; z += pitch) bar(0, sd * (xa + xb) / 2, z, xb - xa, true);
     for (let x = xa + pitch / 2; x < xb; x += pitch) bar(0, sd * x, (za + zb) / 2, zb - za, false);
   });
-  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x8b8e93, roughness: .42, metalness: 1, envMapIntensity: .9 }), list.length);
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ map: aluMaps.map, roughnessMap: aluMaps.rough, roughness: .7, metalness: .75, envMapIntensity: 1.25 }), list.length);
+  const tint = new THREE.Color();
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
   list.forEach((b, i) => {
     const [k, x, z, len, dir, t, h, tilt] = b, a = -ANG[k] * RAD;
@@ -237,6 +277,7 @@ function preloadNext(){                               /* une fois l'écran affic
     if (dir === 'seam'){ q.setFromAxisAngle(Y, a + tilt); sc.set(t, h, len); }
     else { q.setFromAxisAngle(Y, a); dir ? sc.set(len, h, t) : sc.set(t, h, len); }
     m.compose(p, q, sc); mesh.setMatrixAt(i, m);
+    const v = (t > .01 ? .5 : .78) * (.86 + Math.random() * .28); mesh.setColorAt(i, tint.setRGB(v, v, v * 1.03));      /* porteurs plus sombres, lames inégales */
   });
   scene.add(mesh);
   /* vide technique éclairé au-dessus de la résille : c'est ce contre-jour qui la fait lire comme du métal ajouré */
@@ -357,6 +398,7 @@ function frame(){
   const par = view === 'zoom' ? .15 : 1, a = (cam.th + mouse.sx * 2.5 * par) * RAD, s = Math.sin(cam.th * RAD), c = Math.cos(cam.th * RAD), r = R - cam.d;
   camera.position.set(s * r + c * cam.pan, cam.y, -c * r + s * cam.pan);
   camera.lookAt(camera.position.x + Math.sin(a) * 10, cam.y - mouse.sy * .25 * par, camera.position.z - Math.cos(a) * 10);
+  if (window.UKS && window.UKS.dbg){ const g = window.UKS.dbg; camera.position.set(...g.p); camera.lookAt(...g.l); wake(); }      /* point de vue de contrôle */
   /* survol */
   if (mouse.on && !drag.on && !px.classList.contains('on')){
     const it = pick();
