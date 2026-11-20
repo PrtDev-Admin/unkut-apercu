@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ÜNKUT — boutique virtuelle 3D (maquette)</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#efeeeb;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:#111;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+
+/* ---------- scène ---------- */
+.uks{position:fixed;inset:0;overflow:hidden;background:#f1f0ed;user-select:none;-webkit-user-select:none;touch-action:none;cursor:grab}
+.uks.dragging{cursor:grabbing}
+.uks-world,.uks-world *{transform-style:preserve-3d}
+.uks-world{position:absolute;left:50%;top:50%;width:0;height:0}
+.uks-plane{position:absolute;left:0;top:0;backface-visibility:hidden}
+.uks-flat,.uks-flat *{transform-style:flat}
+.uks-wall{background:#f1f0ed}
+.uks-wall::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(70% 60% at 50% 40%,rgba(255,255,255,.9),rgba(255,255,255,0) 70%),
+    linear-gradient(180deg,rgba(0,0,0,.07),rgba(0,0,0,0) 20%,rgba(0,0,0,0) 78%,rgba(0,0,0,.10)),
+    linear-gradient(90deg,rgba(0,0,0,.13),rgba(0,0,0,0) 12%,rgba(0,0,0,0) 88%,rgba(0,0,0,.13))}
+.uks-floor{background:radial-gradient(75% 75% at 50% 50%,#d9d8d3,#bcbbb6)}
+.uks-plinth{position:absolute;left:0;right:0;bottom:0;height:22px;background:linear-gradient(#e4e2de,#cfcdc8)}
+
+/* ---------- mur 0 : portant ---------- */
+.uks-logo{position:absolute;left:50%;top:262px;width:380px;transform:translateX(-50%);pointer-events:none}
+.uks-rod{position:absolute;left:50%;height:7px;border-radius:4px;transform:translateX(-50%);
+  background:linear-gradient(#777,#222 55%,#000);box-shadow:14px 26px 16px rgba(0,0,0,.14)}
+.uks-rod::before,.uks-rod::after{content:"";position:absolute;top:1px;width:46px;height:5px;border-radius:3px;background:linear-gradient(#555,#111);box-shadow:8px 14px 10px rgba(0,0,0,.14)}
+.uks-rod::before{left:26px;transform-origin:0 50%;transform:rotate(14deg)}
+.uks-rod::after{right:26px;transform-origin:100% 50%;transform:rotate(-14deg)}
+.uks-rack{position:absolute;left:50%;width:0;height:0}
+.uks-item{position:absolute;left:0;top:0;width:0;height:0;cursor:pointer;outline:0}
+.uks-box{position:absolute;filter:drop-shadow(18px 24px 16px rgba(0,0,0,.16));pointer-events:none}
+.uks-box>*{position:absolute;left:0;top:0;width:100%;height:100%;-webkit-user-drag:none}
+.uks-seq{background-repeat:no-repeat;opacity:0}
+.uks-box--flat>img{width:100%}
+.uks-box--flat>.uks-hook{width:120px;height:60px;top:0;transform-origin:50% 100%;overflow:visible}
+.uks-item .hit{position:absolute;top:-30px;height:calc(var(--gh) + 30px)}
+.uks-name{position:absolute;top:calc(var(--gh) + 26px);left:0;transform:translateX(-50%);white-space:nowrap;font-size:21px;color:#8d8c88;opacity:0;pointer-events:none}
+.uks-item:focus-visible .hit{outline:3px solid #111;outline-offset:6px}
+
+/* ---------- murs 1-3 : mobilier ---------- */
+.uks-sign{position:absolute;left:50%;top:0;transform:translateX(-50%);padding-top:120px}
+.uks-sign::before,.uks-sign::after{content:"";position:absolute;top:0;width:2px;height:120px;background:#3b3b3b}
+.uks-sign::before{left:16%}.uks-sign::after{right:16%}
+.uks-sign b{display:block;background:linear-gradient(#262626,#0c0c0c);color:#fff;font-size:44px;font-weight:800;letter-spacing:.18em;padding:16px 34px 16px 42px;white-space:nowrap;box-shadow:14px 26px 24px rgba(0,0,0,.22)}
+.uks-fix{position:absolute;left:50%;top:400px;transform:translateX(-50%);display:flex;gap:120px;align-items:center}
+.uks-grid{display:grid;gap:44px 50px;padding:46px 54px 40px;background:linear-gradient(#d8c39c,#caaf82);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.06),inset 0 18px 30px rgba(0,0,0,.10),22px 34px 40px rgba(0,0,0,.14)}
+.uks-grid.peg{background:radial-gradient(circle at 12px 12px,rgba(0,0,0,.22) 0 3px,transparent 4px) 0 0/44px 44px,linear-gradient(#d8c39c,#caaf82)}
+.uks-grid.g3{grid-template-columns:repeat(3,270px)}
+.uks-grid.g2{grid-template-columns:repeat(2,340px);padding:0;gap:0;background:none;box-shadow:22px 34px 40px rgba(0,0,0,.14)}
+.uks-grid.g2 .uks-tile{height:430px;background:linear-gradient(#d8c39c,#c9ad7f);box-shadow:inset 0 0 0 10px #dfcba6,inset 0 40px 50px rgba(0,0,0,.16)}
+.uks-grid.g2 .uks-tile span{left:16%;right:16%;top:12%;bottom:22px}
+.uks-tile{position:relative;border:0;padding:0;background:none;display:block;height:250px}
+.uks-tile i{position:absolute;left:0;right:0;bottom:0;height:12px;background:linear-gradient(#fff,#e9e7e2);box-shadow:8px 16px 16px rgba(0,0,0,.22)}
+.uks-grid.g2 .uks-tile i{left:10px;right:10px;bottom:10px;background:linear-gradient(#e6d3ad,#cfb689)}
+.uks-tile span{position:absolute;left:8%;right:8%;top:0;bottom:12px;background:#f6f5f2 center/cover no-repeat;border-radius:3px;
+  box-shadow:10px 14px 18px rgba(0,0,0,.20);transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+.uks-tile:hover span,.uks-tile:focus-visible span{transform:translateY(-10px) scale(1.05)}
+.uks-tile.so span{filter:grayscale(1) opacity(.6)}
+.uks-poster{flex:0 0 250px;height:340px;background:#fbfaf8;border:9px solid #151515;box-shadow:16px 26px 26px rgba(0,0,0,.22);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:20px;text-align:center;font-size:15px;letter-spacing:.3em;line-height:1.7;color:#111}
+.uks-poster img{width:100%}
+
+/* ---------- habillage 2D ---------- */
+.uks-ui{transition:opacity .45s}
+.uks.px-on .uks-hide{opacity:0;pointer-events:none}
+.uks-top{position:absolute;left:0;right:0;top:calc(14px + env(safe-area-inset-top));text-align:center;pointer-events:none;z-index:9}
+.uks-top img{height:30px;display:block;margin:0 auto 5px}
+.uks-top span{font-size:9px;letter-spacing:.42em;color:#77766f}
+.uks-cart{position:absolute;right:18px;top:calc(16px + env(safe-area-inset-top));z-index:10;width:42px;height:42px;border:0;border-radius:50%;background:none;display:grid;place-items:center;text-decoration:none;color:#111}
+.uks-cart svg{width:22px;height:22px}
+.uks-cart b{position:absolute;right:2px;top:2px;min-width:17px;height:17px;border-radius:9px;background:#111;color:#fff;font-size:10px;line-height:17px;text-align:center;transform:scale(0);transition:transform .35s cubic-bezier(.3,1.6,.5,1)}
+.uks-cart b.on{transform:scale(1)}
+.uks-nav{position:absolute;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:2px;padding:5px;border-radius:999px;
+  background:rgba(255,255,255,.86);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 6px 28px rgba(0,0,0,.14),0 0 0 1px rgba(0,0,0,.05);max-width:calc(100vw - 16px);overflow-x:auto;scrollbar-width:none}
+.uks-nav::-webkit-scrollbar{display:none}
+.uks-nav button{border:0;background:none;border-radius:999px;padding:9px 15px;font-size:13px;white-space:nowrap;color:#444;transition:background .25s,color .25s}
+.uks-nav button[aria-current=true]{background:#111;color:#fff;font-weight:600}
+.uks-nav .sep{width:1px;height:18px;background:#d6d4cf;margin:0 4px;flex:none}
+.uks-nav .info{width:34px;height:34px;padding:0;font-size:13px;font-style:italic;font-family:Georgia,serif;flex:none}
+.uks-arrow{position:absolute;top:50%;z-index:5;width:48px;height:48px;margin-top:-24px;border-radius:50%;border:0;background:rgba(255,255,255,.88);box-shadow:0 4px 18px rgba(0,0,0,.14)}
+.uks-arrow svg{width:18px;height:18px;display:block;margin:auto}
+.uks-prev{left:16px}.uks-next{right:16px}
+.uks-hint{position:absolute;left:0;right:0;bottom:calc(84px + env(safe-area-inset-bottom));text-align:center;font-size:10px;letter-spacing:.3em;color:#8b8a86;z-index:4;pointer-events:none}
+.uks-info{position:absolute;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translate(-50%,10px);z-index:7;width:min(340px,calc(100vw - 32px));background:rgba(255,255,255,.94);border-radius:16px;padding:16px 18px;font-size:13px;line-height:1.6;color:#333;box-shadow:0 12px 40px rgba(0,0,0,.16);opacity:0;visibility:hidden;transition:opacity .3s,transform .3s,visibility 0s .3s}
+.uks-info.on{opacity:1;visibility:visible;transform:translate(-50%,0);transition:opacity .3s,transform .3s}
+
+/* ---------- fiche produit ---------- */
+.uks-px{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;gap:3vw;padding:80px 6vw 60px;cursor:default;
+  background:radial-gradient(90% 80% at 40% 40%,#f6f5f2,#e9e8e4);opacity:0;visibility:hidden;transition:opacity .5s,visibility 0s .5s}
+.uks-px.on{opacity:1;visibility:visible;transition:opacity .5s}
+.uks-px-media{flex:0 1 44%;height:100%;display:flex;align-items:center;justify-content:center;transform:translateX(90px);transition:transform .8s cubic-bezier(.2,.8,.2,1)}
+.uks-px.on .uks-px-media{transform:none}
+.uks-px-media img{max-width:100%;max-height:100%;object-fit:contain;filter:drop-shadow(20px 28px 20px rgba(0,0,0,.16));transition:opacity .25s}
+.uks-px-media img.flat{mix-blend-mode:multiply;filter:none}
+.uks-px-next{flex:none;width:40px;height:40px;border-radius:50%;border:1px solid #9c9b96;background:none}
+.uks-px-next svg{width:15px;height:15px;display:block;margin:auto}
+.uks-px-card{flex:0 0 350px;max-width:100%;background:rgba(255,255,255,.8);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-radius:22px;padding:26px;
+  box-shadow:0 20px 60px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.05);transform:translateX(40px);opacity:0;transition:transform .7s .1s cubic-bezier(.2,.8,.2,1),opacity .5s .1s}
+.uks-px.on .uks-px-card{transform:none;opacity:1}
+.uks-px-cat{font-size:11px;color:#77766f}
+.uks-px-card h2{margin:6px 0 8px;font-size:23px;font-weight:500;line-height:1.15}
+.uks-px-price{font-size:15px}
+.uks-px-sub{font-size:11px;color:#8b8a86;margin-top:3px}
+.uks-px-lab{margin:24px 0 10px;font-size:12px;color:#444}
+.uks-sizes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.uks-sizes button{border:1px solid #e1dfda;background:#fff;border-radius:8px;padding:11px 0;font-size:12px}
+.uks-sizes button[aria-pressed=true]{background:#111;border-color:#111;color:#fff}
+.uks-sizes button[disabled]{color:#bbb;text-decoration:line-through;cursor:not-allowed;background:#f3f2ef}
+.uks-add{width:100%;margin-top:16px;border:0;border-radius:999px;background:#151515;color:#fff;padding:15px;font-size:13px;font-weight:600;transition:background .3s}
+.uks-add.ok{background:#22a447}
+.uks-add[disabled]{background:#b9b7b2;cursor:not-allowed}
+.uks-px-link{display:block;margin-top:14px;text-align:center;font-size:12px;color:#555;text-decoration:none}
+.uks-close{position:absolute;left:18px;top:calc(16px + env(safe-area-inset-top));height:42px;padding:0 16px 0 12px;border-radius:999px;border:0;background:rgba(255,255,255,.9);box-shadow:0 4px 18px rgba(0,0,0,.12);z-index:2;font-size:12px;display:flex;align-items:center;gap:6px}
+.uks-close svg{width:14px;height:14px}
+.uks-fly{position:fixed;z-index:20;pointer-events:none;object-fit:contain;transition:transform .8s cubic-bezier(.5,0,.3,1),opacity .8s}
+:focus-visible{outline:2px solid #111;outline-offset:3px}
+
+@media (max-width:760px){
+  .uks-nav button{padding:9px 11px;font-size:12px}
+  .uks-arrow{width:40px;height:40px;margin-top:-20px}
+  .uks-prev{left:8px}.uks-next{right:8px}
+  .uks-px{flex-direction:column;gap:10px;padding:70px 16px 16px;justify-content:flex-start;overflow:auto}
+  .uks-px-media{flex:0 0 38vh;height:38vh;width:100%}
+  .uks-px-next{position:absolute;right:16px;top:calc(70px + 19vh - 20px);background:rgba(255,255,255,.8)}
+  .uks-px-card{flex:0 0 auto;width:100%;padding:20px}
+}
+@media (prefers-reduced-motion:reduce){.uks-px,.uks-px *{transition:none!important}}
+
+/* ---------- version 3D : boutique sombre ---------- */
+html,body,.uks{background:#060607}
+.uks-gl{position:absolute;inset:0;width:100%;height:100%;display:block}
+.uks-top{transition:opacity .5s}
+.uks.px-on .uks-top{opacity:1!important}
+.uks-top img{filter:invert(1);transition:filter .4s}
+.uks-top span{color:#b9bbc0}
+.uks-cart{color:#fff;transition:color .4s}
+.uks.px-on .uks-top img{filter:none}.uks.px-on .uks-top span{color:#77766f}.uks.px-on .uks-cart{color:#111}
+.uks-hint{color:#c9cbd0}
+.uks-lbl{position:absolute;left:0;top:0;z-index:4;font-size:13px;color:#77766f;white-space:nowrap;pointer-events:none;opacity:0;will-change:transform}
+.uks.px-on .uks-lbl{display:none}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<main class="uks" id="uks" aria-label="Boutique virtuelle ÜNKUT">
+  <div class="uks-lbl" id="lbl"></div>
+  <div class="uks-top"><img src="store-assets/logo.png" alt="ÜNKUT"><span>VIRTUAL STORE</span></div>
+  <a class="uks-cart" id="cart" href="https://unkutofficial.com/cart" target="_blank" rel="noopener" aria-label="Panier">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 8h14l-1 12H6L5 8zM9 8V6a3 3 0 016 0v2"/></svg><b id="cartN">0</b>
+  </a>
+  <div class="uks-hint uks-ui uks-hide" id="hint">GLISSE POUR REGARDER · DÉFILE POUR AVANCER</div>
+
+  <button class="uks-arrow uks-prev uks-ui uks-hide" id="prev" aria-label="Tourner vers le mur de gauche"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 4l-8 8 8 8"/></svg></button>
+  <button class="uks-arrow uks-next uks-ui uks-hide" id="next" aria-label="Tourner vers le mur de droite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 4l8 8-8 8"/></svg></button>
+
+  <div class="uks-info" id="info">Glisse pour regarder autour de toi, ou utilise les flèches pour passer d'un mur à l'autre. Fais défiler pour avancer vers un rayon. Survole un vêtement pour le voir de face, clique pour l'ouvrir.</div>
+  <nav class="uks-nav uks-ui uks-hide" id="nav" aria-label="Rayons"></nav>
+
+  <div class="uks-px" id="px" role="dialog" aria-modal="true" aria-label="Fiche produit">
+    <button class="uks-close" id="close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 4l-8 8 8 8"/></svg>Retour</button>
+    <div class="uks-px-media"><img id="pxImg" alt=""></div>
+    <button class="uks-px-next" id="pxNext" aria-label="Produit suivant"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
+    <div class="uks-px-card">
+      <div class="uks-px-cat" id="pxCat"></div>
+      <h2 id="pxName"></h2>
+      <div class="uks-px-price" id="pxPrice"></div>
+      <div class="uks-px-sub" id="pxSub"></div>
+      <div id="pxSizeWrap"><div class="uks-px-lab">Choisis ta taille</div><div class="uks-sizes" id="pxSizes"></div></div>
+      <button class="uks-add" id="pxAdd" type="button">Ajouter au panier</button>
+      <a class="uks-px-link" id="pxLink" target="_blank" rel="noopener">Voir la fiche complète →</a>
+    </div>
+  </div>
+</main>
+<script src="store-data.js"></script>
+<script src="store-seq.js"></script>
+<script type="module" src="store3d.js"></script>
+</body>
+</html>
