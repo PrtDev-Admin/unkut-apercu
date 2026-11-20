@@ -11,7 +11,7 @@ const root = $('#uks'), px = $('#px');
 /* dimensions en mètres */
 const R = 4.138, HH = 4.43, WW = 2000 * (4.43 / 990);
 const PANEL_W = 3.4, PANEL_H = 4.2, PANEL_Z = -R + .5, FRONT = PANEL_Z + .07;
-const ROD_Y = 2.72, ROD_Z = FRONT + .2, RAIL = .019, GH = 1.08, SC = GH / 1431, GAP_O = .15, GAP_Z = .3, TURN = .62;
+const ROD_Y = 2.72, ROD_Z = FRONT + .2, RAIL = .013, GH = 1.08, SC = GH / 1431, GAP_O = .15, GAP_Z = .3, TURN = .62;
 const small = () => innerWidth < 760;
 const LOW = small() || matchMedia('(pointer:coarse)').matches;      /* téléphone / tablette : rendu allégé */
 
@@ -60,7 +60,19 @@ function canvasTex(w, h, draw, rep){
 /* environnement de reflets : sans lui un métal reste un aplat noir */
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), .04).texture;
 const mMetal = new THREE.MeshStandardMaterial({ color: 0x1b1c1e, roughness: .38, metalness: 1, envMapIntensity: 1.1 });
-const mRail = new THREE.MeshStandardMaterial({ color: 0xc9ccd1, roughness: .34, metalness: .55, envMapIntensity: 1.6 });        /* tringle : acier brossé foncé */
+/* tringle : acier noir thermolaqué. La matière vient de trois cartes dessinées une fois : grain de la peinture,
+   micro-rayures et traces d'usure laissées par les cintres, et un relief fin qui accroche la lumière */
+const railMaps = (() => {
+  const mk = draw => { const t = canvasTex(256, 1024, draw); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 1); return t; };
+  const noise = (g, w, h, base, amp) => { const im = g.createImageData(w, h), d = im.data; for (let i = 0; i < d.length; i += 4){ const v = base + (Math.random() - .5) * amp; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; } g.putImageData(im, 0, 0); };
+  const marks = (g, w, h, n, col) => { g.strokeStyle = col; for (let i = 0; i < n; i++){ g.lineWidth = .5 + Math.random(); const x = Math.random() * w, y = Math.random() * h, l = 4 + Math.random() * 46; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (Math.random() - .5) * 5, y + l); g.stroke(); } };
+  const map = mk((g, w, h) => { noise(g, w, h, 30, 12); marks(g, w, h, 220, 'rgba(120,122,126,.16)'); marks(g, w, h, 40, 'rgba(190,192,196,.14)'); });
+  const rough = mk((g, w, h) => { noise(g, w, h, 150, 60); marks(g, w, h, 260, 'rgba(60,60,60,.45)'); });      /* rayures = plus brillant */
+  const bump = mk((g, w, h) => { noise(g, w, h, 128, 90); });
+  rough.colorSpace = bump.colorSpace = THREE.NoColorSpace;
+  return { map, rough, bump };
+})();
+const mRail = new THREE.MeshStandardMaterial({ map: railMaps.map, roughnessMap: railMaps.rough, bumpMap: railMaps.bump, bumpScale: .6, roughness: .62, metalness: .45, envMapIntensity: 1.9 });        /* tringle : acier brossé foncé */
 const mSteel = new THREE.MeshStandardMaterial({ color: 0xb4b7bb, roughness: .3, metalness: 1, envMapIntensity: 1.2 });
 const mWood = new THREE.MeshStandardMaterial({ color: 0x8a6240, roughness: .7 });
 const photoTex = (f, span) => { const t = tex('store-assets/' + f); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / span, 1 / span); return t; };
@@ -171,9 +183,10 @@ const stations = ST.map((s, k) => {
     add(new THREE.CylinderGeometry(RAIL, RAIL, 3.24, 24), mRail, 0, ROD_Y, ROD_Z).rotation.z = Math.PI / 2;
     [-1.62, 1.62].forEach(x => add(new THREE.SphereGeometry(RAIL * 1.02, 16, 12), mRail, x, ROD_Y, ROD_Z));
     [-1.45, 1.45].forEach(x => {
-      add(new THREE.CylinderGeometry(.011, .011, ROD_Z - FRONT, 12), mRail, x, ROD_Y, (ROD_Z + FRONT) / 2).rotation.x = Math.PI / 2;
-      add(new THREE.CylinderGeometry(.042, .042, .008, 24), mRail, x, ROD_Y, FRONT + .004).rotation.x = Math.PI / 2;
-      add(new THREE.CylinderGeometry(.024, .024, .03, 16), mRail, x, ROD_Y, ROD_Z).rotation.z = Math.PI / 2;
+      add(new THREE.CylinderGeometry(.009, .009, ROD_Z - FRONT, 12), mRail, x, ROD_Y, (ROD_Z + FRONT) / 2).rotation.x = Math.PI / 2;
+      add(new THREE.CylinderGeometry(.036, .036, .007, 24), mRail, x, ROD_Y, FRONT + .0035).rotation.x = Math.PI / 2;
+      [[-.022, 0], [.022, 0]].forEach(([dx, dy]) => add(new THREE.CylinderGeometry(.0045, .0045, .004, 10), mSteel, x + dx, ROD_Y + dy, FRONT + .009).rotation.x = Math.PI / 2);     /* vis de la platine */
+      add(new THREE.CylinderGeometry(.018, .018, .026, 16), mRail, x, ROD_Y, ROD_Z).rotation.z = Math.PI / 2;
     });
     stn.items = s.items.map((p, i) => { const it = makeItem(p, g); it.i = i; it.stn = stn; return it; });
   } else {                                         /* accessoires : tablettes sur le panneau */
@@ -236,7 +249,7 @@ function preloadNext(){                               /* une fois l'écran affic
   const g = stations[0].g, pool = ST[2].items.filter(p => p.flat);
   [-1, 1].forEach(sd => {
     const rk = new THREE.Group(); rk.position.set(sd * 3.62, 0, -R - 1.7); rk.rotation.y = -sd * 1.05; g.add(rk);
-    const tube = (len, x, y, z, rz, rx) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(.016, .016, len, 16), mRail); m.position.set(x, y, z); if (rz) m.rotation.z = rz; if (rx) m.rotation.x = rx; rk.add(m); };
+    const tube = (len, x, y, z, rz, rx) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(.013, .013, len, 16), mRail); m.position.set(x, y, z); if (rz) m.rotation.z = rz; if (rx) m.rotation.x = rx; rk.add(m); };
     tube(2.2, 0, 1.78, 0, Math.PI / 2); tube(1.78, -1.1, .89, 0); tube(1.78, 1.1, .89, 0); tube(.5, -1.1, .02, 0, 0, Math.PI / 2); tube(.5, 1.1, .02, 0, 0, Math.PI / 2);
     for (let i = 0; i < 7; i++){
       const it = makeItem(pool[(i + (sd > 0 ? 3 : 0)) % pool.length], rk, true);
