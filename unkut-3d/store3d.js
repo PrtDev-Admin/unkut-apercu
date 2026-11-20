@@ -4,6 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const D = window.UKS_DATA, SEQ = window.UKS_SEQ, $ = s => document.querySelector(s);
 const ST = D.stations, N = ST.length, RAD = Math.PI / 180;
@@ -54,24 +55,52 @@ const gridTex = (rep, line, bg) => canvasTex(64, 64, (g, w, h) => {
 const loader = new THREE.TextureLoader();
 function tex(src){ const t = loader.load(src); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; }
 
-/* ---------- matériaux : la photo de référence sert de décor, pas de texture générée ---------- */
-const photo = src => new THREE.MeshBasicMaterial({ map: tex(src), color: 0xd9d9d9 });
-const mFull = photo('store-assets/bg-full.jpg'), mCenter = photo('store-assets/bg-center.jpg');
-const mPanel = new THREE.MeshBasicMaterial({ map: tex('store-assets/bg-panel.jpg'), color: 0xe6e6e6 });
-const mWall = new THREE.MeshBasicMaterial({ color: 0x3a3b3c });
+/* ---------- boutique modélisée dans Blender : matière nette (répétée) × lumière calculée (lightmap) ---------- */
 const mMetal = new THREE.MeshStandardMaterial({ color: 0x151516, roughness: .4, metalness: .85 });
 const mSteel = new THREE.MeshStandardMaterial({ color: 0x9a9da1, roughness: .35, metalness: .9 });
 const mWood = new THREE.MeshStandardMaterial({ color: 0x8a6240, roughness: .7 });
-
-/* ---------- sol en béton poli (reflet discret), plafond sombre ---------- */
-const mirror = new Reflector(new THREE.CircleGeometry(9, 48), { textureWidth: 1024, textureHeight: 1024, color: 0x8a8a8a });
-mirror.rotation.x = -Math.PI / 2; scene.add(mirror);
-const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 48), new THREE.MeshBasicMaterial({ color: 0x4b4c4e, transparent: true, opacity: .66 }));
-floor.rotation.x = -Math.PI / 2; floor.position.y = .004; scene.add(floor);
-const ceil = new THREE.Mesh(new THREE.CircleGeometry(9, 48), new THREE.MeshBasicMaterial({ color: 0x0b0b0c }));
+function beton(base, o = {}){
+  const t = canvasTex(1024, 1024, (g, w, h) => {
+    const v = (d, a) => { const c = Math.max(0, Math.min(255, base + d)) | 0; return `rgba(${c},${c},${c + 1},${a})`; };
+    g.fillStyle = v(0, 1); g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 260; i++){ const r = 60 + Math.random() * 260, x = Math.random() * w, y = Math.random() * h, gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, v((Math.random() - .5) * (o.var || 18), .2)); gr.addColorStop(1, v(0, 0)); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); }
+    const im = g.getImageData(0, 0, w, h), d = im.data;                       /* grain fin */
+    for (let i = 0; i < d.length; i += 4){ const n = (Math.random() - .5) * (o.grain || 4); d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+    g.putImageData(im, 0, 0);
+    if (o.joints){ g.strokeStyle = v(-34, .5); g.lineWidth = 2; for (let y = 0; y <= h; y += h / o.joints){ g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+      g.fillStyle = v(-46, .7); for (let y = h / o.joints / 2; y < h; y += h / o.joints) for (const x of [w * .25, w * .75]){ g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); } }
+    if (o.grid){ g.strokeStyle = v(46, 1); g.lineWidth = 3; const st = w / o.grid; for (let p = 0; p <= w; p += st){ g.beginPath(); g.moveTo(p, 0); g.lineTo(p, h); g.moveTo(0, p); g.lineTo(w, p); g.stroke(); } }
+  });
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(o.rep || .4, o.rep || .4); return t;
+}
+const ALB = {                      /* valeur sRGB moyenne ≈ albédo utilisé dans Blender */
+  wall: beton(112, { rep: .3, joints: 2 }), pillar: beton(158, { rep: .3, joints: 2 }), panel: beton(234, { rep: .3, var: 8, grain: 5 }),
+  grid: beton(46, { rep: 1.4, grid: 12, var: 6 }), floor: beton(170, { rep: .2, var: 22 }), slab: beton(38, { rep: .5, var: 6 })
+};
+const EXPO = 1.25;                 /* exposition générale de la lumière calculée */
+const lmTex = n => { const t = tex('store-assets/lm_' + n + '.png'); t.flipY = false; t.channel = 2; return t; };
+const LMAP = { shell: lmTex('shell'), motifs: lmTex('motifs') };
+new GLTFLoader().load('store-assets/boutique.glb', gl => {
+  gl.scene.traverse(o => {
+    if (!o.isMesh) return;
+    const grp = o.parent && LMAP[o.parent.name] ? o.parent.name : o.name.split('_')[0], n = o.material.name;
+    if (n === 'neon') o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 2.6, 2.8) });
+    else if (n === 'lightpanel') o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.5, 1.55), side: THREE.DoubleSide });
+    else {
+      o.material = new THREE.MeshBasicMaterial({ map: ALB[n], lightMap: LMAP[grp] || LMAP.shell, lightMapIntensity: 2 * Math.PI * EXPO });
+      if (n === 'floor'){ o.material.transparent = true; o.material.opacity = .74; }
+    }
+  });
+  scene.add(gl.scene);
+});
+/* sol poli : reflet discret sous le béton ; plafond grillagé */
+const mirror = new Reflector(new THREE.CircleGeometry(11, 48), { textureWidth: 1024, textureHeight: 1024, color: 0x8a8a8a });
+mirror.rotation.x = -Math.PI / 2; mirror.position.y = -.004; scene.add(mirror);
+const ceil = new THREE.Mesh(new THREE.CircleGeometry(11, 48), new THREE.MeshBasicMaterial({ map: gridTex([110, 110], '#34363a'), transparent: true, alphaTest: .4, side: THREE.DoubleSide }));
 ceil.rotation.x = Math.PI / 2; ceil.position.y = HH; scene.add(ceil);
-scene.add(new THREE.AmbientLight(0xffffff, 1.1));
-scene.add(new THREE.HemisphereLight(0xffffff, 0x333333, .9));
+scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x333333, .8));
 
 /* ---------- pièces de vêtements ---------- */
 const hits = [];                                   /* maillages cliquables */
@@ -120,9 +149,6 @@ const logoTex = tex('store-assets/logo.png');
 const stations = ST.map((s, k) => {
   const g = new THREE.Group(); g.rotation.y = -ANG[k] * RAD; scene.add(g);
   const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
-  if (k === 0) add(new THREE.PlaneGeometry(2000 * PXM, HH), mFull, 0, HH / 2, -R);          /* première vue : la boutique entière */
-  else add(new THREE.PlaneGeometry(1210 * PXM, HH), mCenter, 0, HH / 2, -R);               /* autres rayons : le centre seulement */
-  add(new THREE.BoxGeometry(PANEL_W, PANEL_H, .1), [mWall, mWall, mWall, mWall, mPanel, mWall], 0, PANEL_H / 2, PANEL_Z);
   /* logo + nom du rayon sur le panneau */
   const lg = add(new THREE.PlaneGeometry(.95, .95 * 279 / 939), new THREE.MeshBasicMaterial({ map: logoTex, transparent: true }), 0, 3.38, FRONT + .005);
   add(new THREE.PlaneGeometry(1.9, 1.9 / 8), new THREE.MeshBasicMaterial({ map: labelTex(s.label), transparent: true, opacity: .75 }), 0, 3.13, FRONT + .005);
@@ -143,6 +169,21 @@ const stations = ST.map((s, k) => {
   }
   return stn;
 });
+/* premier mur : portants sur pied dans les renfoncements, la boutique continue derrière */
+(function(){
+  const g = stations[0].g, pool = ST[2].items.concat(ST[1].items);
+  [-1, 1].forEach(sd => {
+    const rk = new THREE.Group(); rk.position.set(sd * 3.62, 0, -R - 1.7); rk.rotation.y = -sd * 1.05; g.add(rk);
+    const tube = (len, x, y, z, rz, rx) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(.014, .014, len, 8), mSteel); m.position.set(x, y, z); if (rz) m.rotation.z = rz; if (rx) m.rotation.x = rx; rk.add(m); };
+    tube(2.2, 0, 1.78, 0, Math.PI / 2); tube(1.78, -1.1, .89, 0); tube(1.78, 1.1, .89, 0); tube(.5, -1.1, .02, 0, 0, Math.PI / 2); tube(.5, 1.1, .02, 0, 0, Math.PI / 2);
+    for (let i = 0; i < 7; i++){
+      const it = makeItem(pool[(i * 2 + (sd > 0 ? 1 : 0)) % pool.length], rk, true);
+      it.grp.position.set(-.9 + i * .3, 1.768, .001 * i); it.grp.scale.setScalar(.9); it.sh.visible = false; it.mesh.material.color.setScalar(.62);
+      it.grp.rotation.y = sd * .75;
+    }
+  });
+})();
+
 /* ---------- caméra ---------- */
 let vw = 1, vh = 1, view = 'store', zoomK = 0;       /* 'store' | 0..N-1 | 'zoom' */
 const cam = { th: 0, d: 9, y: 2, pan: 0 }, tg = { th: 0, d: 9, y: 2, pan: 0 }, mouse = { x: 0, y: 0, sx: 0, sy: 0, on: false };
