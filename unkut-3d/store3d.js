@@ -27,12 +27,26 @@ const wake = (ms = 900) => { wakeUntil = Math.max(wakeUntil, performance.now() +
 const mgr = new THREE.LoadingManager(); let booted = false;
 mgr.onProgress = (u, l, t) => { wake(); if (!booted) $('#load b').style.width = Math.round(l / t * 100) + '%'; };
 mgr.onLoad = () => { wake(1500); if (booted) return; booted = true; $('#load').classList.add('done'); setTimeout(preloadNext, 1800); };
-const loader = new THREE.TextureLoader(mgr), cache = {};
-function tex(src, cb, fresh){
-  if (!fresh && cache[src]){ if (cb){ cache[src].image ? cb(cache[src]) : cache[src].userData.cbs.push(cb); } return cache[src]; }
-  const t = loader.load(src, () => { t.userData.cbs.forEach(f => f(t)); t.userData.cbs = []; wake(); });
-  t.userData.cbs = cb ? [cb] : []; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = LOW ? 2 : 8;
+/* images décodées hors du fil d'affichage, puis envoyées à la carte graphique une par une, les grosses seulement quand la caméra est posée :
+   c'est ce qui évite les à-coups pendant un zoom */
+const bmpOpts = o => ({ imageOrientation: o, premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+const useBmp = typeof createImageBitmap === 'function';
+const ldFlip = useBmp ? new THREE.ImageBitmapLoader(mgr).setOptions(bmpOpts('flipY')) : null, ldRaw = useBmp ? new THREE.ImageBitmapLoader(mgr).setOptions(bmpOpts('none')) : null;
+const ldImg = new THREE.ImageLoader(mgr), cache = {}, uploads = [];
+function tex(src, cb, fresh, raw){
+  if (!fresh && cache[src]){ if (cb){ cache[src].userData.ready ? cb(cache[src]) : cache[src].userData.cbs.push(cb); } return cache[src]; }
+  const t = new THREE.Texture(); t.userData.cbs = cb ? [cb] : []; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = LOW ? 2 : 8;
+  const done = img => { t.image = img; if (useBmp) t.flipY = false; else if (raw) t.flipY = false;
+    t.userData.big = img.width * img.height > 1.3e6; uploads.push(t); if (!booted) flushUploads(true); wake(); };
+  (useBmp ? (raw ? ldRaw : ldFlip) : ldImg).load(src, done);
   if (!fresh) cache[src] = t; return t;
+}
+function flushUploads(all, moving){
+  for (let n = 0; uploads.length && (all || n < 1); n++){
+    const i = moving ? uploads.findIndex(t => !t.userData.big) : 0; if (i < 0) return;
+    const t = uploads.splice(i, 1)[0]; t.needsUpdate = true; renderer.initTexture(t); t.userData.ready = true;
+    t.userData.cbs.forEach(f => f(t)); t.userData.cbs = []; wake();
+  }
 }
 function canvasTex(w, h, draw, rep){
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
@@ -55,7 +69,7 @@ const ALB = {                      /* [texture, teinte] : la teinte ramène la m
   grid: [gridTex, 1], floor: [TX.sol, .2 / lin(128)], slab: [TX.beton, .045 / lin(160)]      /* plafond : béton sombre, sans grille */
 };
 const EXPO = 1.25;                 /* exposition générale de la lumière calculée */
-const lmTex = n => { const t = tex('store-assets/lm_' + n + (LOW ? '_1k' : '') + '.webp'); t.flipY = false; t.channel = 2; return t; };
+const lmTex = n => { const t = tex('store-assets/lm_' + n + (LOW ? '_1k' : '') + '.webp', null, false, true); t.channel = 2; return t; };
 const LMAP = { shell: lmTex('shell'), motifs: lmTex('motifs') };
 let mirror = null, floorMat = null;
 new GLTFLoader(mgr).load('store-assets/boutique.glb', gl => {
@@ -104,7 +118,7 @@ function makeItem(p, parent, decor){
     it.load = () => { if (it.tS) return; it.tS = tex('stills-web/rest-' + p.k + '.webp', t => setMap(it, t)); };          /* léger : vue de profil */
     it.full = () => { if (it.tF) return; it.load();                                                                        /* à l'approche : face nette + rotation */
       it.tF = tex('stills-web/face-' + p.k + '.webp', () => { it.fr = -1; wake(); });
-      it.tQ = tex('stills-web/mot-' + p.k + '.webp', () => { it.fr = -1; wake(); }, true); it.tQ.repeat.set(1 / q.cols, 1 / rows); };
+      it.tQ = tex('stills-web/mot-' + p.k + '.webp', () => { it.fr = -1; wake(); }, true); it.tQ.repeat.set(1 / q.cols, 1 / rows); it.tQ.generateMipmaps = false; it.tQ.minFilter = THREE.LinearFilter; };
   } else {                                         /* photo à plat détourée sur un vrai cintre : pivote en 3D */
     const f = p.flat, gh = GH * f.gk, w = f.w / f.h * gh;
     it.piv = new THREE.Group(); it.grp.add(it.piv); hangerGeo(it.piv);
@@ -269,7 +283,7 @@ function layout(s, dt){
       const fr = Math.round(it.e * (it.q.frames - 1)), st = it.e <= .001 ? 0 : it.e >= .999 ? 2 : 1;
       if (fr !== it.fr || st !== it.st){
         it.fr = fr; it.st = st;
-        const okQ = it.tQ && it.tQ.image, okF = it.tF && it.tF.image;       /* tant que la rotation n'est pas chargée : bascule simple profil → face */
+        const okQ = it.tQ && it.tQ.userData.ready, okF = it.tF && it.tF.userData.ready;       /* tant que la rotation n'est pas chargée : bascule simple profil → face */
         const t = st === 0 ? it.tS : st === 2 ? (okF ? it.tF : okQ ? it.tQ : it.tS) : okQ ? it.tQ : (it.e > .5 && okF ? it.tF : it.tS);
         if (t && t === it.tQ) it.tQ.offset.set((fr % it.q.cols) / it.q.cols, 1 - (Math.floor(fr / it.q.cols) + 1) / it.rows);
         if (t && it.mesh.material.map !== t){ it.mesh.material.map = t; it.sh.material.map = t; }
@@ -285,7 +299,7 @@ function layout(s, dt){
 
 /* ---------- boucle ---------- */
 const clock = new THREE.Clock(), ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), V = new THREE.Vector3();
-let spin = 0, shown = null, slow = 0, frames = 0;
+let spin = 0, shown = null, slow = 0, frames = 0, lower = false;
 function pick(){ ray.setFromCamera(ndc, camera); const h = ray.intersectObjects(hits, false)[0]; return h ? h.object.userData.it : null; }
 function frame(){
   const dtRaw = clock.getDelta(), dt = Math.min(.05, dtRaw), k = 1 - Math.exp(-dt * 4.2), now = performance.now();
@@ -314,6 +328,8 @@ function frame(){
     el.style.opacity = Math.min(1, (lab.e - .55) * 3);
   } else el.style.opacity = 0;
   /* on ne redessine que si la caméra, un vêtement ou la souris bouge encore */
+  const moving = drag.on || Math.abs(tg.th - cam.th) > .05 || Math.abs(tg.d - cam.d) > .01 || Math.abs(tg.pan - cam.pan) > .01;
+  if (uploads.length){ flushUploads(false, moving); wake(300); }
   let busy = now < wakeUntil || drag.on || Math.abs(spin) > .01 || Math.abs(tg.th - cam.th) > .01 || Math.abs(tg.d - cam.d) > .002 || Math.abs(tg.y - cam.y) > .002 || Math.abs(tg.pan - cam.pan) > .002
     || Math.abs(mouse.x - mouse.sx) > .002 || Math.abs(mouse.y - mouse.sy) > .002;
   if (!busy) stations.forEach(st => { if (Math.abs((zoomed(st) ? 1 : 0) - st.m) > .002) busy = true; st.items.forEach(it => { if (it.shelf ? it.e > .003 && it.e < .997 : it.o > 0 && it.o < 1) busy = true; }); });
@@ -321,7 +337,8 @@ function frame(){
     const t0 = performance.now(); renderer.render(scene, camera);
     /* si l'affichage rame : on coupe d'abord le reflet du sol, puis on baisse la définition */
     slow = slow * .95 + (dtRaw > .034 ? 1 : 0) * .05; frames++;
-    if (frames > 90 && slow > .5){ frames = 0; slow = 0; if (mirror && mirror.visible) setMirror(false); else if (quality > .6){ quality *= .8; resize(); } }
+    if (frames > 90 && slow > .5) lower = true;
+    if (lower && !moving){ lower = false; frames = 0; slow = 0; if (mirror && mirror.visible) setMirror(false); else if (quality > .6){ quality *= .8; resize(); } }
   }
   requestAnimationFrame(frame);
 }
@@ -438,4 +455,4 @@ $('#pxAdd').addEventListener('click', function(){
 
 addEventListener('resize', resize); resize(); cam.d = tg.d; cam.y = tg.y; setView('store');
 requestAnimationFrame(frame);
-window.UKS = { setView, cam, tg, stations, zoom: k => { zoomK = k; setView('zoom'); }, hover: (k, i) => { mouse.on = false; stations[k].hover = i; } };
+window.UKS = { renderer, scene, camera, THREE, uploads, setView, cam, tg, stations, zoom: k => { zoomK = k; setView('zoom'); }, hover: (k, i) => { mouse.on = false; stations[k].hover = i; } };
