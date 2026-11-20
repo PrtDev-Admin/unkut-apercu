@@ -74,9 +74,12 @@ function beton(base, o = {}){
   });
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(o.rep || .4, o.rep || .4); return t;
 }
-const ALB = {                      /* valeur sRGB moyenne ≈ albédo utilisé dans Blender */
-  wall: beton(112, { rep: .3, joints: 2 }), pillar: beton(158, { rep: .3, joints: 2 }), panel: beton(234, { rep: .3, var: 8, grain: 5 }),
-  grid: beton(46, { rep: 1.4, grid: 12, var: 6 }), floor: beton(170, { rep: .2, var: 22 }), slab: beton(38, { rep: .5, var: 6 })
+const photoTex = (f, span) => { const t = tex('store-assets/' + f); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / span, 1 / span); return t; };
+const TX = { beton: photoTex('tx_beton.jpg', 2.6), sol: photoTex('tx_sol.jpg', 3.2), enduit: photoTex('tx_enduit.jpg', 2.4) };   /* matières photographiées (Poly Haven, CC0) */
+const lin = v => Math.pow(v / 255, 2.2);
+const ALB = {                      /* [texture, teinte] : la teinte ramène la matière à l'albédo utilisé dans Blender */
+  wall: [TX.beton, .16 / lin(160)], pillar: [TX.beton, .32 / lin(160)], panel: [TX.enduit, .82 / lin(232)],
+  grid: [beton(46, { rep: 1.4, grid: 12, var: 6 }), 1], floor: [TX.sol, .2 / lin(128)], slab: [beton(38, { rep: .5, var: 6 }), 1]
 };
 const EXPO = 1.25;                 /* exposition générale de la lumière calculée */
 const lmTex = n => { const t = tex('store-assets/lm_' + n + '.png'); t.flipY = false; t.channel = 2; return t; };
@@ -88,7 +91,7 @@ new GLTFLoader().load('store-assets/boutique.glb', gl => {
     if (n === 'neon') o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 2.6, 2.8) });
     else if (n === 'lightpanel') o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.5, 1.55), side: THREE.DoubleSide });
     else {
-      o.material = new THREE.MeshBasicMaterial({ map: ALB[n], lightMap: LMAP[grp] || LMAP.shell, lightMapIntensity: 2 * Math.PI * EXPO });
+      o.material = new THREE.MeshBasicMaterial({ map: ALB[n][0], color: new THREE.Color().setScalar(ALB[n][1]), lightMap: LMAP[grp] || LMAP.shell, lightMapIntensity: 2 * Math.PI * EXPO });
       if (n === 'floor'){ o.material.transparent = true; o.material.opacity = .74; }
     }
   });
