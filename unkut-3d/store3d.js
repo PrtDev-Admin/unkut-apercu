@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const D = window.UKS_DATA, SEQ = window.UKS_SEQ, $ = s => document.querySelector(s);
 const ST = D.stations, N = ST.length, RAD = Math.PI / 180;
@@ -10,7 +11,7 @@ const root = $('#uks'), px = $('#px');
 /* dimensions en mètres */
 const R = 4.138, HH = 4.43, WW = 2000 * (4.43 / 990);
 const PANEL_W = 3.4, PANEL_H = 4.2, PANEL_Z = -R + .5, FRONT = PANEL_Z + .07;
-const ROD_Y = 2.72, ROD_Z = FRONT + .2, GH = 1.08, SC = GH / 1431, GAP_O = .15, GAP_Z = .3, TURN = .62;
+const ROD_Y = 2.72, ROD_Z = FRONT + .2, RAIL = .019, GH = 1.08, SC = GH / 1431, GAP_O = .15, GAP_Z = .3, TURN = .62;
 const small = () => innerWidth < 760;
 const LOW = small() || matchMedia('(pointer:coarse)').matches;      /* téléphone / tablette : rendu allégé */
 
@@ -56,8 +57,11 @@ function canvasTex(w, h, draw, rep){
 }
 
 /* ---------- boutique modélisée dans Blender : matière photographiée (répétée) × lumière calculée (lightmap) ---------- */
-const mMetal = new THREE.MeshStandardMaterial({ color: 0x151516, roughness: .4, metalness: .85 });
-const mSteel = new THREE.MeshStandardMaterial({ color: 0x9a9da1, roughness: .35, metalness: .9 });
+/* environnement de reflets : sans lui un métal reste un aplat noir */
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), .04).texture;
+const mMetal = new THREE.MeshStandardMaterial({ color: 0x1b1c1e, roughness: .38, metalness: 1, envMapIntensity: 1.1 });
+const mRail = new THREE.MeshStandardMaterial({ color: 0xc9ccd1, roughness: .34, metalness: .55, envMapIntensity: 1.6 });        /* tringle : acier brossé foncé */
+const mSteel = new THREE.MeshStandardMaterial({ color: 0xb4b7bb, roughness: .3, metalness: 1, envMapIntensity: 1.2 });
 const mWood = new THREE.MeshStandardMaterial({ color: 0x8a6240, roughness: .7 });
 const photoTex = (f, span) => { const t = tex('store-assets/' + f); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / span, 1 / span); return t; };
 const TX = { beton: photoTex('tx_beton.webp', 2.6), sol: photoTex('tx_sol.webp', 3.2), enduit: photoTex('tx_enduit.webp', 2.4) };   /* Poly Haven, CC0 */
@@ -91,8 +95,9 @@ function setMirror(on){
   if (mirror) mirror.visible = on;
   if (floorMat){ floorMat.transparent = on; floorMat.opacity = on ? .76 : 1; floorMat.needsUpdate = true; }
 }
-scene.add(new THREE.AmbientLight(0xffffff, 1.0));
-scene.add(new THREE.HemisphereLight(0xffffff, 0x333333, .8));
+scene.add(new THREE.AmbientLight(0xffffff, .35));
+{ const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(.3, 1, .6); scene.add(key); }      /* reflet franc sur le dessus des tubes */
+scene.add(new THREE.HemisphereLight(0xffffff, 0x333333, .35));
 
 /* ---------- pièces de vêtements ---------- */
 const hits = [];                                   /* maillages cliquables */
@@ -106,7 +111,7 @@ function hangerGeo(g){
 function setMap(it, t){ it.mesh.material.map = t; it.sh.material.map = t; it.mesh.material.needsUpdate = true; it.sh.material.needsUpdate = true; it.grp.visible = true; it.fr = -1; wake(); }
 function makeItem(p, parent, decor){
   const it = { p, o: 0, e: 0, x: 0, fr: -1, st: -1, grp: new THREE.Group() };
-  it.grp.position.set(0, ROD_Y - .012, ROD_Z); it.grp.visible = false; parent.add(it.grp);
+  it.grp.position.set(0, ROD_Y + .018, ROD_Z + .02); it.grp.visible = false;      /* le crochet passe par-dessus le tube */ parent.add(it.grp);
   if (p.k){                                        /* photos sur cintre + planche de rotation vidéo */
     const q = SEQ[p.k], rows = Math.ceil(q.frames / q.cols), w = q.W * SC, h = q.H * SC;
     it.q = q; it.rows = rows;
@@ -162,8 +167,14 @@ const stations = ST.map((s, k) => {
   add(new THREE.PlaneGeometry(1.9, 1.9 / 8), new THREE.MeshBasicMaterial({ map: labelTex(s.label), transparent: true, opacity: .75 }), 0, 3.13, FRONT + .005);
   const stn = { k, s, g, hover: -1, m: 0, items: [], loaded: false, fullLoaded: false };
   if (s.type === 'rack'){
-    const rod = add(new THREE.CylinderGeometry(.011, .011, 3.2, 12), mMetal, 0, ROD_Y, ROD_Z); rod.rotation.z = Math.PI / 2;
-    [-1.48, 1.48].forEach(x => { add(new THREE.CylinderGeometry(.009, .009, ROD_Z - FRONT, 8), mMetal, x, ROD_Y, (ROD_Z + FRONT) / 2).rotation.x = Math.PI / 2; });
+    /* tringle : vrai tube d'acier, embouts, et deux supports à platine fixés au panneau */
+    add(new THREE.CylinderGeometry(RAIL, RAIL, 3.24, 24), mRail, 0, ROD_Y, ROD_Z).rotation.z = Math.PI / 2;
+    [-1.62, 1.62].forEach(x => add(new THREE.SphereGeometry(RAIL * 1.02, 16, 12), mRail, x, ROD_Y, ROD_Z));
+    [-1.45, 1.45].forEach(x => {
+      add(new THREE.CylinderGeometry(.011, .011, ROD_Z - FRONT, 12), mRail, x, ROD_Y, (ROD_Z + FRONT) / 2).rotation.x = Math.PI / 2;
+      add(new THREE.CylinderGeometry(.042, .042, .008, 24), mRail, x, ROD_Y, FRONT + .004).rotation.x = Math.PI / 2;
+      add(new THREE.CylinderGeometry(.024, .024, .03, 16), mRail, x, ROD_Y, ROD_Z).rotation.z = Math.PI / 2;
+    });
     stn.items = s.items.map((p, i) => { const it = makeItem(p, g); it.i = i; it.stn = stn; return it; });
   } else {                                         /* accessoires : tablettes sur le panneau */
     const cols = 3, cw = .95, rh = .78, mShelf = new THREE.MeshStandardMaterial({ color: 0xf2f2f0, roughness: .6 });
@@ -186,24 +197,46 @@ function preloadNext(){                               /* une fois l'écran affic
   const s = stations.find(x => !x.loaded) || stations.find(x => !x.fullLoaded); if (!s) return;
   s.loaded ? s.full() : s.load(); setTimeout(preloadNext, LOW ? 2500 : 1200);
 }
-/* plafond : vraie grille en lames métalliques (volume réel), éclairée par au-dessus devant chaque panneau */
+/* plafond : résille métallique à maille fine, posée par travées. Chaque travée est alignée sur son mur et s'arrête
+   sur un profilé porteur : la grille suit donc les cinq pans de la salle au lieu de les couper en biais */
 (function(){
-  const pitch = LOW ? .2 : .125, x0 = -6, x1 = 6, z0 = -8, z1 = 5.2, hgt = .045, th = .007;
-  const nx = Math.round((x1 - x0) / pitch) + 1, nz = Math.round((z1 - z0) / pitch) + 1;
-  const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x3a3c40, roughness: .55, metalness: .5 }), nx + nz), m = new THREE.Matrix4();
-  for (let i = 0; i < nx; i++){ m.makeScale(th, hgt, z1 - z0); m.setPosition(x0 + i * pitch, HH, (z0 + z1) / 2); bars.setMatrixAt(i, m); }
-  for (let j = 0; j < nz; j++){ m.makeScale(x1 - x0, hgt, th); m.setPosition((x0 + x1) / 2, HH, z0 + j * pitch); bars.setMatrixAt(nx + j, m); }
-  scene.add(bars);
-  const glow = canvasTex(128, 128, (g, w, h) => { const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); gr.addColorStop(0, 'rgba(210,214,222,.9)'); gr.addColorStop(.6, 'rgba(150,154,162,.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
-  const mGlow = new THREE.MeshBasicMaterial({ map: glow, transparent: true, depthWrite: false });
-  stations.forEach(st => { const p = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 3.4), mGlow); p.rotation.x = Math.PI / 2; p.position.set(0, HH + .34, -R + 1.7); st.g.add(p); });
+  const pitch = LOW ? .14 : .085, hgt = .035, th = .0045, W1 = 1210 * (4.43 / 990);
+  const list = [];                                             /* [mur, x, z, longueur, sens, épaisseur, hauteur] dans le repère du mur */
+  const bar = (k, x, z, len, alongX, t = th, h = hgt) => { if (len > .02) list.push([k, x, z, len, alongX, t, h]); };
+  ANG.forEach((a, k) => {
+    const hw = (k === 0 ? WW : W1) / 2;
+    for (let z = -R + pitch / 2; z < 0; z += pitch){ const e = hw * (-z / R); bar(k, 0, z, 2 * e, true); }             /* lames parallèles au mur */
+    for (let x = -hw + pitch / 2; x < hw; x += pitch){ const z1 = -R * Math.abs(x) / hw; bar(k, x, (-R + z1) / 2, z1 + R, false); }   /* lames vers le centre */
+    for (let z = -R + .6; z < -.3; z += .6){ const e = hw * (-z / R); bar(k, 0, z, 2 * e, true, .022, .05); }           /* porteurs tous les 60 cm */
+    bar(k, 0, -R + .012, 2 * hw, true, .03, .06);                                                                       /* cornière de rive le long du mur */
+    const L = Math.hypot(hw, R); list.push([k, -hw / 2, -R / 2, L, 'seam', .035, .07, Math.atan2(hw, R)]);              /* profilé sur la jonction avec la travée voisine */
+  });
+  [-1, 1].forEach(sd => {                                        /* renfoncements du premier mur */
+    const xa = W1 / 2, xb = WW / 2, za = -R - 3.6, zb = -R;
+    for (let z = za + pitch / 2; z < zb; z += pitch) bar(0, sd * (xa + xb) / 2, z, xb - xa, true);
+    for (let x = xa + pitch / 2; x < xb; x += pitch) bar(0, sd * x, (za + zb) / 2, zb - za, false);
+  });
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x8b8e93, roughness: .42, metalness: 1, envMapIntensity: .9 }), list.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
+  list.forEach((b, i) => {
+    const [k, x, z, len, dir, t, h, tilt] = b, a = -ANG[k] * RAD;
+    p.set(x, HH, z).applyAxisAngle(Y, a);
+    if (dir === 'seam'){ q.setFromAxisAngle(Y, a + tilt); sc.set(t, h, len); }
+    else { q.setFromAxisAngle(Y, a); dir ? sc.set(len, h, t) : sc.set(t, h, len); }
+    m.compose(p, q, sc); mesh.setMatrixAt(i, m);
+  });
+  scene.add(mesh);
+  /* vide technique éclairé au-dessus de la résille : c'est ce contre-jour qui la fait lire comme du métal ajouré */
+  const glow = canvasTex(128, 128, (g, w, h) => { const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); gr.addColorStop(0, 'rgba(232,236,244,1)'); gr.addColorStop(.45, 'rgba(170,175,184,.7)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+  const mGlow = new THREE.MeshBasicMaterial({ map: glow, transparent: true, depthWrite: false, opacity: .7 });
+  stations.forEach(st => { const pl = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 4.2), mGlow); pl.rotation.x = Math.PI / 2; pl.position.set(0, HH + .3, -R + 1.9); st.g.add(pl); });
 })();
 /* premier mur : portants sur pied dans les renfoncements, la boutique continue derrière */
 (function(){
   const g = stations[0].g, pool = ST[2].items.filter(p => p.flat);
   [-1, 1].forEach(sd => {
     const rk = new THREE.Group(); rk.position.set(sd * 3.62, 0, -R - 1.7); rk.rotation.y = -sd * 1.05; g.add(rk);
-    const tube = (len, x, y, z, rz, rx) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(.014, .014, len, 8), mSteel); m.position.set(x, y, z); if (rz) m.rotation.z = rz; if (rx) m.rotation.x = rx; rk.add(m); };
+    const tube = (len, x, y, z, rz, rx) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(.016, .016, len, 16), mRail); m.position.set(x, y, z); if (rz) m.rotation.z = rz; if (rx) m.rotation.x = rx; rk.add(m); };
     tube(2.2, 0, 1.78, 0, Math.PI / 2); tube(1.78, -1.1, .89, 0); tube(1.78, 1.1, .89, 0); tube(.5, -1.1, .02, 0, 0, Math.PI / 2); tube(.5, 1.1, .02, 0, 0, Math.PI / 2);
     for (let i = 0; i < 7; i++){
       const it = makeItem(pool[(i + (sd > 0 ? 3 : 0)) % pool.length], rk, true);
@@ -278,7 +311,7 @@ function layout(s, dt){
   s.items.forEach((it, i) => {
     let x = (i - (n - 1) / 2) * gap;
     s.items.forEach((o, j) => { if (j !== i) x += (i > j ? 1 : -1) * o.e * (o.fw * .5 - gap * .35); });
-    it.x = x; it.grp.position.x = x; it.grp.position.z = ROD_Z + it.e * .03;
+    it.x = x; it.grp.position.x = x; it.grp.position.z = ROD_Z + .02 + it.e * .03;
     let wNow;
     if (it.q){
       const fr = Math.round(it.e * (it.q.frames - 1)), st = it.e <= .001 ? 0 : it.e >= .999 ? 2 : 1;
