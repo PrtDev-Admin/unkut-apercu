@@ -227,7 +227,8 @@ let zl = 0;                                          /* niveau de zoom continu :
 const mix = (a, b, t) => a + (b - a) * t;
 function aim(){
   const tv = Math.tan(camera.fov * RAD / 2), th = tv * camera.aspect, k = view === 'store' ? wallOf(tg.th) : view === 'zoom' ? zoomK : view;
-  const dS = Math.min(2 * R - .9, Math.max(R + 1, (k === 0 ? WW / 2 : 2.9) / th));
+  /* recul limité : au-delà, la caméra se retrouve collée aux portants des murs situés derrière elle */
+  const dS = Math.min(R + 1.7, Math.max(R + 1, (k === 0 ? WW / 2 : 2.9) / th));
   const dW = Math.min(dS - 1.2, Math.max(3.2, Math.max(2.35 / th, 1.75 / tv)));
   const dZ = (R + ROD_Z) + (vw < vh * .8 ? 1.4 : 1.12) / tv;
   tg.d = zl <= 1 ? mix(dS, dW, zl) : mix(dW, dZ, zl - 1);
