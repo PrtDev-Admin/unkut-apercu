@@ -562,18 +562,21 @@ const setNdc = e => { ndc.set(e.clientX / vw * 2 - 1, -(e.clientY / vh * 2 - 1))
 root.addEventListener('pointerdown', e => {
   drag.moved = false; if (uiTarget(e) || px.classList.contains('on')) return;
   if (introT > .02){ idrag = { y: e.clientY, t: introT, moved: false }; return; }
-  drag.on = true; drag.x0 = drag.lx = e.clientX; drag.th0 = tg.th; drag.pan0 = tg.pan; drag.lt = performance.now(); spin = 0; setNdc(e);
+  drag.on = true; drag.axis = e.pointerType === 'mouse' ? 'x' : ''; drag.y0 = drag.ly = e.clientY; drag.x0 = drag.lx = e.clientX; drag.th0 = tg.th; drag.pan0 = tg.pan; drag.lt = performance.now(); spin = 0; setNdc(e);
 });
 let idrag = null;
 root.addEventListener('pointermove', e => {
   if (idrag){ const dy = idrag.y - e.clientY; if (Math.abs(dy) > 7) idrag.moved = true; if (idrag.moved) setIntro(idrag.t - dy / vh * 1.5); }
   if (e.pointerType === 'mouse'){ mouse.on = !uiTarget(e); mouse.x = e.clientX / vw * 2 - 1; mouse.y = e.clientY / vh * 2 - 1; setNdc(e); if (view === 'zoom' && !drag.on){ tg.pan = mouse.x * panRange(); if (stations[zoomK].s.type !== 'rack'){ capY = (CAPS_STYLE === 1 ? 1.72 - mouse.y * .85 : 1.9 - mouse.y * .5); aim(); } } }
   if (!drag.on) return;
-  const dx = e.clientX - drag.x0;
+  const dx = e.clientX - drag.x0, dyT = e.clientY - drag.y0;
+  if (!drag.axis && Math.max(Math.abs(dx), Math.abs(dyT)) > 9) drag.axis = Math.abs(dyT) > Math.abs(dx) ? 'y' : 'x';
+  if (!drag.axis) return;
+  if (drag.axis === 'y'){ drag.moved = true; advance((drag.ly - e.clientY) * 2.4); drag.ly = e.clientY; return; }      /* doigt vers le haut = avancer, comme la molette vers le bas */
   if (!drag.moved && Math.abs(dx) > 7){ drag.moved = true; root.classList.add('dragging'); if (view !== 'zoom' && view !== 'store') setView('store'); }
   if (!drag.moved) return;
   if (view === 'zoom') tg.pan = clampPan(drag.pan0 - dx / vw * 2 * (tg.d - R - ROD_Z) * Math.tan(camera.fov * RAD / 2) * camera.aspect);
-  else { const g = small() ? .3 : .14; tg.th = drag.th0 - dx * g; const now = performance.now(); spin = -(e.clientX - drag.lx) * g / Math.max(.008, (now - drag.lt) / 1000) * .5; drag.lx = e.clientX; drag.lt = now; }
+  else { const g = small() ? .3 : .14; tg.th = drag.th0 - dx * g; const now = performance.now(); spin = Math.max(-160, Math.min(160, -(e.clientX - drag.lx) * g / Math.max(.016, (now - drag.lt) / 1000) * .5)); drag.lx = e.clientX; drag.lt = now; }
 });
 root.addEventListener('pointerleave', () => { mouse.on = false; });
 function endDrag(e){
@@ -591,12 +594,9 @@ function act(it){
   openPx(s.s.items, it.pi, s.s.label);
 }
 let zSnap = 0;
-root.addEventListener('wheel', e => {
-  if (px.classList.contains('on')) return;
-  const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : 0;
-  if (!d){                                           /* défilement : la caméra avance progressivement vers le rayon en face */
+function advance(dy){                                /* défilement vertical (molette, ou doigt qui glisse verticalement) : la caméra avance vers le rayon en face, ou entre / ressort */
+  dy = Math.max(-120, Math.min(120, dy));
     const k = view === 'store' ? wallOf(tg.th) : view === 'zoom' ? zoomK : view, rack = stations[k].s.type === 'rack';
-    const dy = Math.max(-120, Math.min(120, e.deltaY * (e.deltaMode ? 30 : 1)));
     if (introT > 0 || (dy < 0 && view === 'store' && zl <= 0 && dAng(tg.th, 0) < 30)){      /* dehors : la molette fait avancer vers la porte (et ressortir en reculant) */
       if (introT === 0){ tg.th = near(0); }
       setIntro(introT - dy * .0011); clearTimeout(zSnap);
@@ -609,8 +609,11 @@ root.addEventListener('wheel', e => {
     if (v !== view) setView(v, true); else aim();
     clearTimeout(zSnap);
     zSnap = setTimeout(() => { if (zl > 1 && zl < 2){ zl = dy > 0 ? 2 : 1; const w = zl === 2 ? 'zoom' : k; if (w === 'zoom') zoomK = k; if (w !== view) setView(w, true); else aim(); } }, 260);
-    return;
-  }
+}
+root.addEventListener('wheel', e => {
+  if (px.classList.contains('on')) return;
+  const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : 0;
+  if (!d){ advance(e.deltaY * (e.deltaMode ? 30 : 1)); return; }
   if (view === 'zoom') tg.pan = clampPan(tg.pan + d * .004);
   else { if (view !== 'store') setView('store'); tg.th += d * .08; }
 }, { passive: true });
