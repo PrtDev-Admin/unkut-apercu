@@ -138,6 +138,18 @@ export function buildFacade(THREE, scene, R, opt){
   const enterM = basic({ map: ctex(1024, 220, (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = '#fff'; g.font = 'italic 900 190px "Helvetica Neue",Helvetica,Arial,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.transform(1.25, 0, 0, 1, -w * .125, 0); g.fillText('ENTER', w / 2, h / 2 + 8); }),
     transparent: true, depthWrite: false });
   add(new THREE.PlaneGeometry(3.3, .71), enterM, 0, 3.55, ZF + 1.1).visible = false;      /* enseigne ENTER retirée (24/11/2026) : elle sera remplacée par autre chose */
+  /* --- enseigne : le logo ÜNKUT en lettres en relief, blanches et lumineuses (tracés de store-assets/logo-enseigne.svg, extrudés) ---
+     SIGN_W = largeur de l'enseigne en mètres, SIGN_Y = hauteur de son centre : ce sont les deux réglages à changer pour la redimensionner ou la déplacer. */
+  const SIGN_W = 1.7, SIGN_Y = 3.42, SIGN_D = .035, sign = new THREE.Group(); sign.position.set(0, SIGN_Y, ZF + .05);      /* dos des lettres plaqué sur le mur du dessus de porte (z = ZF + 0,05) */ G.add(sign);      /* pas dans projHide : l'image projetée ne contient pas l'enseigne, elle doit rester visible */
+  if (opt.SVGLoader) new opt.SVGLoader(opt.mgr).load('store-assets/logo-enseigne.svg?v=1', data => {
+    const shapes = []; data.paths.forEach(p => opt.SVGLoader.createShapes(p).forEach(sh => shapes.push(sh)));
+    const box = new THREE.Box2(); shapes.forEach(sh => sh.getPoints(8).forEach(q => box.expandByPoint(q)));
+    const k = SIGN_W / (box.max.x - box.min.x), cx = (box.min.x + box.max.x) / 2, cy = (box.min.y + box.max.y) / 2;
+    const geo = new THREE.ExtrudeGeometry(shapes, { depth: SIGN_D / k, bevelEnabled: false, curveSegments: 14 });
+    geo.translate(-cx, -cy, 0); geo.scale(k, -k, k);                                   /* le SVG a son axe vertical vers le bas */
+    const m = new THREE.Mesh(geo, [basic({ color: 0xffffff, side: THREE.DoubleSide }), basic({ color: 0xaeb3ba, side: THREE.DoubleSide })]);      /* faces blanches (lumineuses), chants gris */
+    sign.add(m); opt.wake && opt.wake(1200);
+  });
 
   /* --- ciel de fin de journée (dôme) --- */
   { const sky = new THREE.Mesh(new THREE.SphereGeometry(300, 24, 12), basic({ side: THREE.BackSide, depthWrite: false, map: ctex(8, 256, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h);

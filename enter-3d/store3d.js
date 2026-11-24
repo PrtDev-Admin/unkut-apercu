@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildFacade } from './facade.js?v=32';
+import { buildFacade } from './facade.js?v=35';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 const D = window.UKS_DATA, SEQ = window.UKS_SEQ, $ = s => document.querySelector(s);
@@ -97,7 +98,7 @@ const lmTex = n => { const t = tex(BAKED + 'lm_' + n + (LOW ? '_1k' : '') + '.we
 const LMAP = { shell: lmTex('shell'), motifs: lmTex('motifs'), caps: lmTex('caps') };
 let mirror = null, floorMat = null;
 /* ---------- entrée : la boutique vue de la rue, on y entre en faisant défiler ---------- */
-const facade = buildFacade(THREE, scene, R, { renderer, mgr, GLTFLoader, RoundedBoxGeometry, wake, openW: OPEN_W, openH: OPEN_H, lmax: 2, ver: 10 });
+const facade = buildFacade(THREE, scene, R, { renderer, mgr, GLTFLoader, SVGLoader, RoundedBoxGeometry, wake, openW: OPEN_W, openH: OPEN_H, lmax: 2, ver: 10 });
 const veil = $('#veil'), hero = $('#hero'); let heroO = -1, heroZ = 20;
 const SHOT = location.search.indexOf('shot') >= 0;      /* mode capture (?shot=1) : 3D de base, sans rendu projeté ni reflets dessinés, pour servir de référence à une nouvelle image */
 if (SHOT) facade.hideForShot();
