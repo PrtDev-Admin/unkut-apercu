@@ -149,7 +149,20 @@ html,body,.uks{background:#060607}
 .uks-top img{filter:invert(1);transition:filter .4s}
 .uks-top span{color:#b9bbc0}
 .uks-cart{color:#fff;transition:color .4s}
-.uks.px-on .uks-top img{filter:none}.uks.px-on .uks-top span{color:#77766f}.uks.px-on .uks-cart{color:#111}
+/* fiche produit : la boutique reste visible derrière, assombrie (voile sombre + léger flou) ; logo, panier et flèche restent donc clairs */
+.uks-px{background:rgba(4,4,6,.7);-webkit-backdrop-filter:blur(5px) saturate(.9);backdrop-filter:blur(5px) saturate(.9)}
+.uks-px-media img{filter:drop-shadow(0 30px 40px rgba(0,0,0,.55))}
+.uks-px-next{border-color:rgba(255,255,255,.55);color:#fff}
+.uks-px-card{background:rgba(255,255,255,.9)}
+/* galerie de la fiche : photos de la boutique (fond blanc) présentées en carte arrondie, points de repère sous l'image */
+.uks-px-media{position:relative}
+.uks-px-media img.photo{border-radius:16px;max-height:86%;filter:drop-shadow(0 24px 40px rgba(0,0,0,.5))}
+.uks-px-dots{position:absolute;left:0;right:0;bottom:4px;display:flex;justify-content:center;gap:7px}
+.uks-px-dots i{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.35)}
+.uks-px-dots i.on{background:#fff}
+/* envol du vêtement entre le portant et la fiche : l'image voyage seule, la zone photo ne glisse plus */
+.uks-fly2{position:fixed;z-index:30;pointer-events:none;object-fit:contain;transform-origin:center;will-change:transform;filter:drop-shadow(0 30px 40px rgba(0,0,0,.45))}
+.uks-px.fly .uks-px-media{transform:none!important;transition:none!important}
 .uks-hint{color:#c9cbd0}
 .uks-load{position:absolute;inset:0;z-index:30;background:#060607;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .7s,visibility 0s .7s}
 .uks-load.done{opacity:0;visibility:hidden}
@@ -184,8 +197,8 @@ html,body,.uks{background:#060607}
 
   <div class="uks-px" id="px" role="dialog" aria-modal="true" aria-label="Fiche produit">
     <button class="uks-close" id="close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 4l-8 8 8 8"/></svg>Retour</button>
-    <div class="uks-px-media"><img id="pxImg" alt=""></div>
-    <button class="uks-px-next" id="pxNext" aria-label="Produit suivant"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
+    <div class="uks-px-media"><img id="pxImg" alt=""><div class="uks-px-dots" id="pxDots"></div></div>
+    <button class="uks-px-next" id="pxNext" aria-label="Image suivante"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
     <div class="uks-px-card">
       <div class="uks-px-cat" id="pxCat"></div>
       <h2 id="pxName"></h2>
@@ -199,6 +212,6 @@ html,body,.uks{background:#060607}
 </main>
 <script src="store-data.js?v=10"></script>
 <script src="store-seq.js?v=7"></script>
-<script type="module" src="store3d.js?v=53"></script>
+<script type="module" src="store3d.js?v=63"></script>
 </body>
 </html>

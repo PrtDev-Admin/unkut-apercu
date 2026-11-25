@@ -6,7 +6,20 @@ import { buildFacade } from './facade.js?v=35';
 import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
+/* vitesse de rotation par vêtement (1 = normale, 0,62 s) : pour accélérer ou ralentir une pièce, changer son chiffre ici */
+const TURN_SPEED = { blanco: 1.8 };
+/* ESSAI DE MOUVEMENT (25/11/2026, inspiré d'un portant observé en démonstration ; code réécrit, rien de copié) — mettre MOTION à false pour revenir à l'ancien mouvement
+   1. rotation plus souple : départ doux, freinage long (courbe cubic-bezier .45, 0, .2, 1) et durée allongée ;
+   2. balancement : chaque vêtement est un petit pendule accroché à la tringle ; quand son cintre glisse (un voisin s'ouvre ou se referme), il se balance puis s'amortit. */
+const MOTION = true, TURN_SOFT = .95, SWAY = { period: 1.0, damp: .17, gain: .32, max: .045 };      /* période 1 s ; amortissement ; force ; angle maxi (0,045 rad ≈ 2,6°) */
+const bez = (x1, y1, x2, y2) => t => { let u = t; for (let i = 0; i < 6; i++){ const x = 3 * (1 - u) * (1 - u) * u * x1 + 3 * (1 - u) * u * u * x2 + u * u * u - t, d = 3 * (1 - u) * (1 - u) * x1 + 6 * (1 - u) * u * (x2 - x1) + 3 * u * u * (1 - x2); if (Math.abs(d) < 1e-5) break; u = Math.min(1, Math.max(0, u - x / d)); } return 3 * (1 - u) * (1 - u) * u * y1 + 3 * (1 - u) * u * u * y2 + u * u * u; };
+const easeTurn = bez(.45, 0, .2, 1);
 const D = window.UKS_DATA, SEQ = window.UKS_SEQ, $ = s => document.querySelector(s);
+/* réglages venus de l'éditeur de thème Shopify (window.UKS_CFG, écrit par la section) : visuels de l'écran, nombre de pièces et espacement par portant.
+   Sans ces réglages (site local), les valeurs de store-data.js s'appliquent. */
+const CFG = window.UKS_CFG || {};
+if (CFG.slides && CFG.slides.length) D.slides = CFG.slides.map(u => ({ img: u }));
+D.stations.forEach(st => { const c = (CFG.stations || {})[st.id]; if (!c) return; if (c.count > 0) st.count = c.count; if (c.gap > 0) st.gapK = c.gap / 100; if (c.label) st.label = c.label; });
 const ST = D.stations, N = ST.length, RAD = Math.PI / 180;
 /* salle octogonale : mur écran + comptoir à 0°, six murs de rayons, et l'entrée à 180° (sans rayon), en face de l'écran.
    ANG = les 7 pans qui portent une « station » (écran puis les 6 rayons), ALLANG = les 8 pans (mêmes cotes que blender/build_boutique8.py) */
@@ -147,7 +160,7 @@ function makeItem(p, parent, decor){
   it.grp.position.set(0, ROD_Y + .018, ROD_Z + .02); it.grp.visible = false;      /* le crochet passe par-dessus le tube */ parent.add(it.grp);
   if (p.k){                                        /* photos sur cintre + planche de rotation vidéo */
     const q = SEQ[p.k], rows = Math.ceil(q.frames / q.cols), w = q.W * SC, h = q.H * SC;
-    it.q = q; it.rows = rows;
+    it.q = q; it.rows = rows; it.turn = TURN / (TURN_SPEED[p.k] || 1);
     const geo = new THREE.PlaneGeometry(w, h);
     it.mesh = new THREE.Mesh(geo, garmentMat());
     it.mesh.position.set((q.W / 2 - q.hx) * SC, -(q.H / 2 - q.y0) * SC + .005, 0); it.grp.add(it.mesh);
@@ -270,7 +283,7 @@ const stations = ST.map((s, k) => {
     });
     /* remplissage : un portant peu fourni répète ses pièces à l'affichage (plusieurs cintres de la même pièce côte à côte,
        comme en boutique). Aucun produit n'est dupliqué : chaque cintre renvoie au même produit (it.pi). */
-    const shown = [], want = Math.max(s.items.length, s.fill || 0);
+    const shown = [], want = s.count || Math.max(s.items.length, s.fill || 0);      /* s.count (réglage du thème) = nombre de pièces sur le portant ; moins que de produits : seuls les premiers sont montrés */
     s.items.forEach((p, pi) => { const nb = Math.floor(want / s.items.length) + (pi < want % s.items.length ? 1 : 0); for (let c = 0; c < nb; c++) shown.push(pi); });
     stn.items = shown.map((pi, i) => { const it = makeItem(s.items[pi], g); it.i = i; it.pi = pi; it.stn = stn; return it; });
   } else if (s.type === 'shelf'){
@@ -320,7 +333,7 @@ const stations = ST.map((s, k) => {
         sl.i = nx; B.material.map = tn; B.material.needsUpdate = true; B.material.opacity = 0; B.visible = true; sl.t0 = performance.now(); wake(1400); },
       tick(now){ if (!sl.t0) return; const t = Math.min(1, (now - sl.t0) / 900); B.material.opacity = t * t * (3 - 2 * t); wake(200);
         if (t >= 1){ A.material.map = B.material.map; A.material.needsUpdate = true; B.visible = false; sl.t0 = 0; get((sl.i + 1) % sl.n); } } };
-    if (sl.n){ A.material.map = get(0); if (sl.n > 1) get(1); setInterval(() => { if (!document.hidden) sl.go(1); }, 5000); }
+    if (sl.n){ A.material.map = get(0); if (sl.n > 1) get(1); setInterval(() => { if (!document.hidden) sl.go(1); }, (CFG.slideSec || 5) * 1000); }
   }
   stn.load = () => { if (stn.loaded) return; stn.loaded = true; stn.items.forEach(it => it.load()); };
   stn.full = () => { if (stn.fullLoaded) return; stn.fullLoaded = true; stn.load(); stn.items.forEach(it => it.full()); };
@@ -431,7 +444,7 @@ function resize(){
 function panRange(){
   const s = stations[zoomK]; if (!s || !s.items.length) return 0;
   if (s.s.type !== 'rack') return Math.max(0, 1.55 - (tg.d - .7) * Math.tan(camera.fov * RAD / 2) * camera.aspect * .8);
-  const half = (tg.d - R - ROD_Z) * Math.tan(camera.fov * RAD / 2) * camera.aspect, ext = Math.min(RAIL_HALF + .15, (s.items.length - 1) / 2 * GAP_Z + .55);
+  const half = (tg.d - R - ROD_Z) * Math.tan(camera.fov * RAD / 2) * camera.aspect, ext = Math.min(RAIL_HALF + .15, (s.items.length - 1) / 2 * GAP_Z * (s.s.gapK || 1) + .55);
   return Math.max(0, ext - half * .75);
 }
 const clampPan = x => { const r = panRange(); return Math.max(-r, Math.min(r, x)); };
@@ -444,12 +457,12 @@ function layout(s, dt){
   }
   const n = s.items.length, on = live(s);
   s.m += ((zoomed(s) ? 1 : 0) - s.m) * (1 - Math.exp(-dt * 3.4));
-  const gap = GAP_O + (GAP_Z - GAP_O) * s.m;
+  const gap = (GAP_O + (GAP_Z - GAP_O) * s.m) * (s.s.gapK || 1);      /* espacement réglable par portant */
   s.items.forEach(it => {
     const want = s.hover === it.i && on ? 1 : 0;
-    it.o = want > it.o ? Math.min(1, it.o + dt / TURN) : Math.max(0, it.o - dt / TURN);
+    const T = (it.turn || TURN) * (MOTION ? TURN_SOFT / TURN : 1); it.o = want > it.o ? Math.min(1, it.o + dt / T) : Math.max(0, it.o - dt / T);
     if (want && window.UKS && window.UKS.fz != null) it.o = window.UKS.fz;      /* test : fige la rotation à un point donné */
-    it.e = it.o * it.o * (3 - 2 * it.o);
+    it.e = MOTION ? easeTurn(it.o) : it.o * it.o * (3 - 2 * it.o);
   });
   s.items.forEach((it, i) => {
     let x = (i - (n - 1) / 2) * gap;
@@ -494,6 +507,16 @@ function layout(s, dt){
   s.items.forEach(it => { it.x = mid + (it.x - mid) * k; lo = Math.min(lo, it.x - it.h2); hi = Math.max(hi, it.x + it.h2); });
   const shift = lo < -RAIL_HALF ? -RAIL_HALF - lo : hi > RAIL_HALF ? RAIL_HALF - hi : 0;
   s.items.forEach(it => { it.x += shift; it.grp.position.x = it.x; });
+  if (MOTION && dt > 0){                                 /* balancement : pendule amorti, poussé par l'accélération du cintre le long de la tringle */
+    const w = 2 * Math.PI / SWAY.period;
+    s.items.forEach(it => {
+      if (it.px == null){ it.px = it.x; it.pv = 0; it.sw = 0; it.sv = 0; }
+      const v = (it.x - it.px) / dt, a = Math.max(-40, Math.min(40, (v - it.pv) / dt)); it.px = it.x; it.pv = v;
+      it.sv += (-w * w * it.sw - 2 * SWAY.damp * w * it.sv - SWAY.gain * a) * dt;      /* le bas du vêtement part en retard sur le cintre */ it.sw = Math.max(-SWAY.max, Math.min(SWAY.max, it.sw + it.sv * dt));
+      if (Math.abs(it.sw) < 1e-4 && Math.abs(it.sv) < 1e-3){ it.sw = 0; it.sv = 0; } else wake();
+      it.grp.rotation.z = it.sw;
+    });
+  }
 }
 
 /* ---------- boucle ---------- */
@@ -535,7 +558,7 @@ function frame(){
   stations.forEach(st => { if (st.s.type === 'rack' && live(st) && st.hover >= 0 && st.items[st.hover].e > .55) lab = st.items[st.hover]; });
   const el = $('#lbl');
   if (lab){
-    if (shown !== lab){ shown = lab; el.textContent = lab.p.name + (lab.p.av ? '' : ' — épuisé'); }
+    if (shown !== lab){ shown = lab; el.textContent = lab.p.name + (CFG.labelPrice && lab.p.price ? ' · ' + lab.p.price : '') + (lab.p.av ? '' : ' — épuisé'); }
     lab.grp.getWorldPosition(V); V.y -= lab.h + .07; V.project(camera);
     el.style.transform = 'translate(-50%,0) translate(' + ((V.x + 1) / 2 * vw).toFixed(1) + 'px,' + ((1 - V.y) / 2 * vh).toFixed(1) + 'px)';
     el.style.opacity = Math.min(1, (lab.e - .55) * 3);
@@ -589,10 +612,11 @@ function endDrag(e){
 root.addEventListener('pointerup', endDrag); root.addEventListener('pointercancel', endDrag);
 function act(it){
   const s = it.stn;
-  if (it.shelf){ openPx(s.s.items, it.pi, s.s.label); return; }
-  if (!zoomed(s)){ zoomK = s.k; setView('zoom'); s.hover = it.i; tg.pan = clampPan((it.i - (s.items.length - 1) / 2) * GAP_Z); return; }
+  if (it.shelf){ openPx(s.s.items, it.pi, s.s.label, it); return; }
+  preload(s.s.items[it.pi]);
+  if (!zoomed(s)){ zoomK = s.k; setView('zoom'); s.hover = it.i; tg.pan = clampPan((it.i - (s.items.length - 1) / 2) * GAP_Z * (s.s.gapK || 1)); return; }
   if (s.hover !== it.i || it.o < .5){ s.hover = it.i; return; }
-  openPx(s.s.items, it.pi, s.s.label);
+  openPx(s.s.items, it.pi, s.s.label, it);
 }
 let zSnap = 0;
 function advance(dy){                                /* défilement vertical (molette, ou doigt qui glisse verticalement) : la caméra avance vers le rayon en face, ou entre / ressort */
@@ -630,34 +654,71 @@ nav.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if (introT > .02){ if (e.key === 'Enter' || e.key === 'ArrowUp' || e.key === ' ') setIntro(0); return; }
-  if (px.classList.contains('on')){ if (e.key === 'Escape') closePx(); if (e.key === 'ArrowRight') nextPx(); return; }
+  if (px.classList.contains('on')){ if (e.key === 'Escape') closePx(); if (e.key === 'ArrowRight') nextPx(1); if (e.key === 'ArrowLeft') nextPx(-1); return; }
   if (e.key === 'Escape') setView(view === 'zoom' ? zoomK : 'store');
   if (view === 'zoom'){
     const s = stations[zoomK]; mouse.on = false;
     if (e.key === 'ArrowLeft') s.hover = Math.max(0, s.hover - 1);
     if (e.key === 'ArrowRight') s.hover = Math.min(s.items.length - 1, s.hover + 1);
     if (e.key === 'Enter' && s.hover >= 0) openPx(s.s.items, s.items[s.hover].pi, s.s.label);
-    if (s.hover >= 0 && /Arrow/.test(e.key)) tg.pan = clampPan((s.hover - (s.items.length - 1) / 2) * GAP_Z);
+    if (s.hover >= 0 && /Arrow/.test(e.key)) tg.pan = clampPan((s.hover - (s.items.length - 1) / 2) * GAP_Z * (s.s.gapK || 1));
   } else { if (e.key === 'ArrowLeft') turn(-1); if (e.key === 'ArrowRight') turn(1); if (e.key === 'Enter' && view !== 'store' && stations[view].s.type === 'rack'){ zoomK = view; setView('zoom'); stations[view === 'zoom' ? zoomK : zoomK].hover = 0; } }
 });
 
 /* ---------- fiche produit ---------- */
-let cur = null, chosen = null, count = 0;
-function openPx(list, i, cat){
+let cur = null, chosen = null, count = 0, gi = 0;
+const U = window.UKS_URL || (u => u);
+/* images de la fiche : le vêtement détouré d'abord, puis les photos de la boutique (toutes celles du produit quand elles sont lues en direct sur Shopify) */
+const gal = p => { const a = [p.k ? 'store-assets/' + p.k + '-face.webp' : p.flat.src]; (p.imgs && p.imgs.length ? p.imgs : [p.img]).forEach(u => { if (u && a.indexOf(u) < 0) a.push(u); }); return a; };
+/* les photos de la boutique sont demandées à la bonne taille (pas l'original), et les images d'un produit sont préchargées dès qu'on le pointe :
+   la fiche et la flèche n'attendent plus le téléchargement */
+const sized = u => /cdn\.shopify\.com|\/cdn\/shop\//.test(u) && !/[?&]width=/.test(u) ? u + (u.indexOf('?') < 0 ? '?' : '&') + 'width=1400' : u;
+const warm = {}, preload = p => { if (!p) return; gal(p).forEach(u => { u = U(sized(u)); if (!warm[u]){ const i = new Image(); i.decoding = 'async'; i.src = u; warm[u] = i; } }); };
+let imgTok = 0;
+function showImg(){
+  const p = cur.list[cur.i], g = gal(p), im = $('#pxImg'); gi = ((gi % g.length) + g.length) % g.length; preload(p);
+  const u = U(sized(g[gi])), k = gi, tok = ++imgTok, put = () => { if (tok !== imgTok) return; im.classList.toggle('photo', k > 0); im.src = u; im.style.opacity = ''; };
+  const w = warm[u]; if (w && w.complete) put(); else { im.style.opacity = '.35'; const t = w || (warm[u] = new Image()); t.addEventListener('load', put, { once: true }); t.addEventListener('error', put, { once: true }); if (!w) t.src = u; }      /* l'image précédente reste affichée (estompée) le temps que la suivante arrive */
+  $('#pxNext').style.display = g.length > 1 ? '' : 'none';
+  const d = $('#pxDots'); if (d){ d.innerHTML = g.length > 1 ? g.map((_, k) => '<i' + (k === gi ? ' class="on"' : '') + '></i>').join('') : ''; }
+}
+/* ---------- ouverture de la fiche : le vêtement cliqué quitte le portant et vient se poser, agrandi, à sa place dans la fiche (0,95 s, départ doux, freinage long) ;
+   à la fermeture il fait le chemin inverse. Pendant ce temps il n'est plus sur son cintre. ---------- */
+const FLY = { ms: 950, ease: 'cubic-bezier(.45,0,.2,1)' }; let flown = null;
+const parts = it => [it.mesh, it.sh, it.mB].filter(Boolean);
+function screenRect(o){
+  const b = new THREE.Box3().setFromObject(o), p = new THREE.Vector3(); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (let i = 0; i < 8; i++){ p.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).project(camera); const x = (p.x * .5 + .5) * vw, y = (-p.y * .5 + .5) * vh; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  return { left: x0, top: y0, width: x1 - x0, height: y1 - y0 };
+}
+function fly(from, to, src, done){
+  const f = document.createElement('img'); f.src = src; f.className = 'uks-fly2';
+  f.style.cssText = 'left:' + to.left + 'px;top:' + to.top + 'px;width:' + to.width + 'px;height:' + to.height + 'px;transform:translate(' + (from.left + from.width / 2 - to.left - to.width / 2) + 'px,' + (from.top + from.height / 2 - to.top - to.height / 2) + 'px) scale(' + (from.height / Math.max(1, to.height)) + ')';
+  document.body.appendChild(f); f.getBoundingClientRect(); f.style.transition = 'transform ' + FLY.ms + 'ms ' + FLY.ease; f.style.transform = 'none'; wake(FLY.ms + 300);
+  setTimeout(() => { done && done(); f.remove(); }, FLY.ms + 40);
+}
+function openPx(list, i, cat, origin){
   cur = { list, i, cat }; chosen = null;
-  const p = list[i], im = $('#pxImg');
-  im.src = p.k ? 'store-assets/' + p.k + '-face.webp' : p.flat.src; im.alt = p.name;
+  const p = list[i], im = $('#pxImg'); gi = 0; im.alt = p.name; showImg();
   $('#pxCat').textContent = cat; $('#pxName').textContent = p.name; $('#pxPrice').textContent = p.price;
   $('#pxSub').textContent = p.av ? 'En stock' : 'Épuisé';
   $('#pxLink').href = p.url; $('#pxLink').textContent = 'Voir la fiche complète →';
-  $('#pxNext').style.display = list.length > 1 ? '' : 'none';
   const sz = $('#pxSizes'); sz.innerHTML = ''; $('#pxSizeWrap').style.display = p.sizes.length ? '' : 'none';
   p.sizes.forEach(s => {
     const b = document.createElement('button'); b.type = 'button'; b.textContent = s.t; b.disabled = !s.av; b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', () => { chosen = s.t; sz.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); upd(); });
     sz.appendChild(b);
   });
+  const canFly = origin && origin.mesh && !flown && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  px.classList.toggle('fly', !!canFly);
   upd(); px.classList.add('on'); root.classList.add('px-on'); root.style.cursor = ''; wake();
+  if (canFly){
+    const from = screenRect(origin.mesh), to = im.getBoundingClientRect();
+    if (to.width > 10 && from.width > 4){
+      flown = { it: origin }; im.style.visibility = 'hidden'; parts(origin).forEach(m => m.layers.set(1));      /* couche 1 = non dessinée : le cintre reste, vide */
+      fly(from, to, im.currentSrc || im.src, () => { im.style.visibility = ''; });
+    } else px.classList.remove('fly');
+  }
 }
 function upd(){
   const p = cur.list[cur.i], a = $('#pxAdd'); a.classList.remove('ok');
@@ -665,19 +726,54 @@ function upd(){
   else if (p.sizes.length && !chosen){ a.disabled = true; a.textContent = 'Choisis une taille'; }
   else { a.disabled = false; a.textContent = 'Ajouter au panier'; }
 }
-const nextPx = () => openPx(cur.list, (cur.i + 1) % cur.list.length, cur.cat);
-const closePx = () => { px.classList.remove('on'); root.classList.remove('px-on'); };
-$('#close').addEventListener('click', closePx); $('#pxNext').addEventListener('click', nextPx);
+const nextPx = d => { gi += d; showImg(); };      /* la flèche fait défiler les images DU produit (elle ne change plus de produit) */
+const closePx = () => {
+  if (flown){
+    const it = flown.it, im = $('#pxImg'), from = im.getBoundingClientRect(), to = screenRect(it.mesh); flown = null;
+    if (from.width > 10 && to.width > 4){ im.style.visibility = 'hidden'; fly(from, to, im.currentSrc || im.src, () => { parts(it).forEach(m => m.layers.set(0)); im.style.visibility = ''; px.classList.remove('fly'); wake(); }); }
+    else { parts(it).forEach(m => m.layers.set(0)); px.classList.remove('fly'); }
+  }
+  px.classList.remove('on'); root.classList.remove('px-on'); wake();
+};
+$('#close').addEventListener('click', closePx); $('#pxNext').addEventListener('click', () => nextPx(1));
+/* ---------- Shopify : dans le thème (window.UKS_SHOP défini par la page), prix, tailles et stock sont lus en direct et le panier est le vrai ; en local, la fiche reste une maquette ---------- */
+const SHOP = window.UKS_SHOP || null;
+const showCount = n => { count = n; const c = $('#cartN'); c.textContent = count; c.classList.toggle('on', count > 0); };
+if (SHOP){
+  showCount(SHOP.cartCount || 0);
+  const money = c => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: SHOP.currency || 'EUR', minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 }).format(c / 100);
+  const byH = {}; D.stations.forEach(st => (st.items || []).forEach(it => { const m = /\/products\/([^/?#]+)/.exec(it.url || ''); if (m) (byH[m[1]] = byH[m[1]] || []).push(it); }));
+  Object.keys(byH).forEach(h => fetch(SHOP.root + 'products/' + h + '.js', { headers: { Accept: 'application/json' } }).then(r => r.ok ? r.json() : null).then(pr => {
+    if (!pr){ byH[h].forEach(it => { it.av = false; it.gone = true; }); return; }                         /* produit introuvable ou retiré de la vente */
+    const oi = Math.max(0, pr.options.findIndex(o => /taille|size/i.test(o.name || o)));
+    const single = pr.variants.length === 1 && /default/i.test(pr.variants[0].title), seen = {};
+    const sizes = single ? [] : pr.variants.filter(v => seen[v.options[oi]] ? false : (seen[v.options[oi]] = 1)).map(v => ({ t: v.options[oi], av: v.available, id: v.id }));
+    byH[h].forEach(it => { it.live = true; it.price = money(pr.price); it.av = pr.available; it.url = SHOP.root + 'products/' + h; it.sizes = sizes; it.vid = single ? pr.variants[0].id : null; it.imgs = pr.images || []; });
+    if (cur && px.classList.contains('on') && byH[h].includes(cur.list[cur.i])){ const keep = chosen; openPx(cur.list, cur.i, cur.cat); if (keep && sizes.some(z => z.t === keep && z.av)){ chosen = keep; $('#pxSizes').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x.textContent === keep)); upd(); } }
+  }).catch(() => {}));
+}
 $('#pxAdd').addEventListener('click', function(){
-  if (this.classList.contains('ok')) return;
-  /* maquette : sur le thème, ajout réel au panier Shopify */
-  this.classList.add('ok'); this.textContent = 'Ajouté au panier ✓';
-  $('#pxLink').href = 'https://unkutofficial.com/cart'; $('#pxLink').textContent = 'Voir le panier →';
-  const im = $('#pxImg'), a = im.getBoundingClientRect(), b = $('#cart').getBoundingClientRect(), f = im.cloneNode();
-  f.className = 'uks-fly'; f.style.cssText = 'left:' + a.left + 'px;top:' + a.top + 'px;width:' + a.width + 'px;height:' + a.height + 'px';
-  document.body.appendChild(f); f.getBoundingClientRect();
-  f.style.transform = 'translate(' + (b.left + b.width / 2 - a.left - a.width / 2) + 'px,' + (b.top + b.height / 2 - a.top - a.height / 2) + 'px) scale(.08)'; f.style.opacity = '.2';
-  setTimeout(() => { f.remove(); count++; const c = $('#cartN'); c.textContent = count; c.classList.add('on'); }, 800);
+  if (this.classList.contains('ok') || this.classList.contains('busy')) return;
+  const btn = this, p = cur.list[cur.i];
+  const done = n => {
+    btn.classList.add('ok'); btn.textContent = 'Ajouté au panier ✓';
+    $('#pxLink').href = SHOP ? SHOP.root + 'cart' : 'https://unkutofficial.com/cart'; $('#pxLink').textContent = 'Voir le panier →';
+    const im = $('#pxImg'), a = im.getBoundingClientRect(), b = $('#cart').getBoundingClientRect(), f = im.cloneNode();
+    f.className = 'uks-fly'; f.style.cssText = 'left:' + a.left + 'px;top:' + a.top + 'px;width:' + a.width + 'px;height:' + a.height + 'px';
+    document.body.appendChild(f); f.getBoundingClientRect();
+    f.style.transform = 'translate(' + (b.left + b.width / 2 - a.left - a.width / 2) + 'px,' + (b.top + b.height / 2 - a.top - a.height / 2) + 'px) scale(.08)'; f.style.opacity = '.2';
+    setTimeout(() => { f.remove(); showCount(n == null ? count + 1 : n); }, 800);
+  };
+  if (!SHOP){ done(); return; }                                                                            /* maquette locale : rien n'est ajouté nulle part */
+  const z = p.sizes.find(x => x.t === chosen), id = z ? z.id : p.vid;
+  if (!id){ btn.textContent = p.live ? 'Indisponible' : 'Chargement…'; return; }
+  btn.classList.add('busy'); btn.textContent = 'Ajout…';
+  fetch(SHOP.root + 'cart/add.js', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ items: [{ id, quantity: 1 }] }) })
+    .then(r => r.json().then(j => ({ ok: r.ok, j })))
+    .then(({ ok, j }) => { btn.classList.remove('busy');
+      if (!ok){ btn.textContent = (j && (j.description || j.message)) || 'Indisponible'; return; }
+      return fetch(SHOP.root + 'cart.js', { headers: { Accept: 'application/json' } }).then(r => r.json()).then(c => done(c.item_count)); })
+    .catch(() => { btn.classList.remove('busy'); btn.textContent = 'Erreur, réessaie'; });
 });
 
 addEventListener('resize', resize); resize(); cam.d = tg.d; cam.y = tg.y; setView('store');
